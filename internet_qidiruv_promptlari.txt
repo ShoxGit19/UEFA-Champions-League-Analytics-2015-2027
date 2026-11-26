@@ -1,0 +1,362 @@
+UEFA MA'LUMOTLARINI INTERNETDAN QIDIRISH UCHUN UNIVERSAL PROMPTLAR
+====================================================================
+
+QO'LLANISH TARTIBI
+------------------
+Quyidagi promptlardan birini AI'ga yuboring. [QAVS ICHIDAGI] joylarni o'zingizning ma'lumotingiz bilan almashtiring.
+AI javobida faqat tekshirilgan ma'lumotlar, source URL va ishonchlilik darajasi bo'lishi kerak.
+
+1. KEYINGI MATCHNI TOPISH
+--------------------------
+Internetdan UEFA Champions League bo'yicha [TEAM NAME] jamoasining eng yaqin keyingi matchini top.
+
+Avval UEFA rasmiy saytini tekshir. Agar ma'lumot topilmasa, klubning rasmiy sayti va boshqa ishonchli sport manbalarini tekshir.
+
+Quyidagi JSON formatida javob ber:
+{
+  "competition": "",
+  "season": "",
+  "match_id": "",
+  "date_time_utc": "",
+  "status": "SCHEDULED|LIVE|FINISHED|POSTPONED|CANCELLED|UNKNOWN",
+  "home_team": "",
+  "away_team": "",
+  "stadium": "",
+  "stage": "",
+  "source_urls": [],
+  "confidence": 0.0,
+  "notes": ""
+}
+
+Vaqtni UTC formatida yoz. Agar vaqt aniq bo'lmasa, taxmin qilma va UNKNOWN yoz.
+
+
+2. MATCH NATIJASINI TOPISH
+--------------------------
+UEFA Champions League [SEASON] mavsumidagi [HOME TEAM] va [AWAY TEAM] matchini internetdan tekshir.
+
+UEFA rasmiy saytidan natijani topishga harakat qil. Match tugagan bo'lsa, quyidagilarni aniqlab ber:
+- final score;
+- extra time score;
+- penalty shootout score;
+- winner;
+- match status;
+- match date and stadium;
+- stage.
+
+Javobni faqat quyidagi JSON formatida ber:
+{
+  "match_id": "",
+  "home_team": "",
+  "away_team": "",
+  "status": "FINISHED|LIVE|POSTPONED|CANCELLED|UNKNOWN",
+  "home_score": null,
+  "away_score": null,
+  "home_penalty_score": null,
+  "away_penalty_score": null,
+  "winner": "",
+  "date_time_utc": "",
+  "stadium": "",
+  "stage": "",
+  "source_urls": [],
+  "confidence": 0.0,
+  "conflicts": []
+}
+
+Manbalar o'rtasida farq bo'lsa, ma'lumotni o'zingcha tanlama; conflicts ichida ko'rsat.
+
+
+3. GOALLAR VA EVENTLARNI TOPISH
+-------------------------------
+[DATE] kuni bo'lib o'tgan [HOME TEAM] - [AWAY TEAM] UEFA matchining barcha gol va asosiy eventlarini top.
+
+Har bir gol uchun scorer, assist, minute, added time, home/away va event type ma'lumotlarini tekshir.
+Manba sifatida avval UEFA rasmiy match report yoki match centre sahifasidan foydalan.
+
+JSON:
+{
+  "match_id": "",
+  "events": [
+    {
+      "event_type": "GOAL|PENALTY_GOAL|OWN_GOAL|RED_CARD|YELLOW_CARD|SUBSTITUTION",
+      "minute": null,
+      "added_minute": null,
+      "team": "",
+      "player": "",
+      "player_id": "",
+      "assist": "",
+      "description": ""
+    }
+  ],
+  "source_urls": [],
+  "confidence": 0.0,
+  "missing_fields": []
+}
+
+
+4. PLAYER VA LINEUP MA'LUMOTI
+-----------------------------
+[HOME TEAM] - [AWAY TEAM] matchi uchun boshlang'ich tarkib, zaxira futbolchilar, o'zgarishlar va matchda maydonga tushgan futbolchilarni top.
+
+Har bir futbolchi uchun full name, team, position, shirt number, starter status, minutes played va eventlarini aniqlashga harakat qil.
+UEFA rasmiy manbasida bo'lmagan qiymatni taxmin qilma.
+
+JSON:
+{
+  "match_id": "",
+  "players": [
+    {
+      "full_name": "",
+      "team": "",
+      "player_id": "",
+      "position": "",
+      "shirt_number": null,
+      "starter": false,
+      "minutes_played": null,
+      "status": "PLAYED|BENCH|DID_NOT_PLAY|UNKNOWN"
+    }
+  ],
+  "source_urls": [],
+  "confidence": 0.0,
+  "missing_fields": []
+}
+
+
+5. TEAM VA STADIUM MA'LUMOTI
+----------------------------
+[TEAM NAME] va [STADIUM NAME] haqidagi eng yangi ma'lumotlarni faqat ishonchli manbalardan top.
+
+Team uchun: official name, country, stadium, logo URL, UEFA page URL.
+Stadium uchun: official name, city, country, capacity.
+
+JSON:
+{
+  "team": {
+    "name": "",
+    "country": "",
+    "stadium": "",
+    "logo_url": "",
+    "source_urls": []
+  },
+  "stadium": {
+    "name": "",
+    "city": "",
+    "country": "",
+    "capacity": null,
+    "source_urls": []
+  },
+  "confidence": 0.0
+}
+
+
+6. BAZAGA YOZISHDAN OLDIN TEKSHIRISH
+------------------------------------
+Quyidagi internet ma'lumotlarini PostgreSQL bazasiga yozishdan oldin tekshir:
+
+[JSON DATA]
+
+Tekshiruvlar:
+1. home_team va away_team bir xil emasmi?
+2. date_time_utc valid ISO-8601 formatdami?
+3. home_score va away_score manba bilan mosmi?
+4. eventlardagi gollar total score bilan mosmi?
+5. match duplicate emasmi?
+6. team nomlari mavjud teams jadvali bilan mos keladimi?
+7. source URL’lar haqiqiy va tegishli manbami?
+8. Ma'lumot yetarlicha ishonchlimi?
+
+Javob:
+{
+  "valid": true,
+  "safe_to_upsert": true,
+  "confidence": 0.0,
+  "errors": [],
+  "warnings": [],
+  "normalized_data": {}
+}
+
+
+7. UMUMIY UNIVERSAL PROMPT
+---------------------------
+Internetdan UEFA Champions League bo'yicha quyidagi ma'lumotni top: [NIMANI QIDIRISH KERAK].
+
+Talablar:
+- avval UEFA.com rasmiy manbasini tekshir;
+- ma'lumotni kamida 2 ta ishonchli manba bilan solishtir;
+- vaqtlarni UTC formatiga o'tkaz;
+- hech qanday qiymatni taxmin qilma;
+- topilmagan qiymatni null yoki UNKNOWN deb yoz;
+- source URL’larni to'liq ko'rsat;
+- javobni PostgreSQL’ga yozish mumkin bo'lgan valid JSON formatida qaytar;
+- qarama-qarshi ma'lumotlarni conflicts maydonida ko'rsat;
+- confidence qiymatini 0 dan 1 gacha ber.
+
+JSON format:
+{
+  "query": "",
+  "data": {},
+  "source_urls": [],
+  "confidence": 0.0,
+  "conflicts": [],
+  "missing_fields": [],
+  "safe_to_upsert": false
+}
+
+
+MUHIM ESLATMA
+-------------
+AI bergan natijani darhol bazaga yozmang. Avval JSON validation, duplicate tekshiruvi va source URL tekshiruvini bajaring.
+Prediction faqat matches va goals ma'lumotlari tasdiqlangandan keyin qayta ishga tushirilishi kerak.
+
+
+8. FAQAT MATCHDAY RAQAMINI ALMASHTIRIB ISHLATILADIGAN PROMPT
+-------------------------------------------------------------
+Quyidagi promptda faqat MATCHDAY_NUMBER qiymatini almashtiraman. Masalan: 6 yoki 7.
+
+PROMPT BOSHLANISHI:
+
+UEFA Champions League [SEASON] mavsumining Matchday [MATCHDAY_NUMBER] bosqichidagi BARCHA matchlarni internetdan top.
+
+Men faqat Matchday raqamini almashtiraman. Matchday [MATCHDAY_NUMBER] dagi barcha matchlar ro'yxatini to'liq chiqar. Hech bir matchni qoldirma.
+
+Avval UEFA.com rasmiy fixtures/results va match centre sahifalarini tekshir. Keyin har bir match ma'lumotini kamida bitta qo'shimcha ishonchli manba bilan solishtir.
+
+Har bir match uchun quyidagi ma'lumotlarni top:
+- match ID yoki source match ID;
+- matchday;
+- season;
+- date and kickoff time;
+- UTC vaqt;
+- home team;
+- away team;
+- stadium;
+- city and country;
+- stage;
+- status: SCHEDULED, LIVE, FINISHED, POSTPONED yoki CANCELLED;
+- home score;
+- away score;
+- extra-time score, agar bo'lsa;
+- penalty score, agar bo'lsa;
+- winner;
+- goals va goal scorerlar, agar match tugagan bo'lsa;
+- source URL’lar.
+
+Match hali boshlanmagan bo'lsa score va goals qiymatlarini null yoz.
+Match live bo'lsa hozirgi score va statusni yoz.
+Match tugagan bo'lsa final score va barcha gollarni yoz.
+Hech qanday ma'lumotni taxmin qilma. Topilmagan qiymatni null yoki UNKNOWN yoz.
+
+Javobni quyidagi JSON formatida ber:
+{
+  "season": "",
+  "matchday": [MATCHDAY_NUMBER],
+  "competition": "UEFA Champions League",
+  "matches": [
+    {
+      "source_match_id": "",
+      "matchday": [MATCHDAY_NUMBER],
+      "date_time_utc": "",
+      "status": "SCHEDULED|LIVE|FINISHED|POSTPONED|CANCELLED|UNKNOWN",
+      "home_team": "",
+      "away_team": "",
+      "stadium": "",
+      "city": "",
+      "country": "",
+      "stage": "",
+      "home_score": null,
+      "away_score": null,
+      "extra_time_home_score": null,
+      "extra_time_away_score": null,
+      "home_penalty_score": null,
+      "away_penalty_score": null,
+      "winner": "",
+      "goals": [
+        {
+          "minute": null,
+          "added_minute": null,
+          "team": "",
+          "player": "",
+          "assist": "",
+          "event_type": "GOAL|OWN_GOAL|PENALTY_GOAL"
+        }
+      ],
+      "source_urls": [],
+      "confidence": 0.0,
+      "conflicts": [],
+      "missing_fields": []
+    }
+  ],
+  "total_matches": 0,
+  "all_matches_found": false
+}
+
+JSON javobidan keyin qisqa tekshiruv ber:
+1. Matchday uchun rasmiy manbada nechta match bor?
+2. Nechta match topildi?
+3. Qaysi matchlar ma'lumoti noaniq?
+4. Qaysi matchlar hali boshlanmagan yoki live?
+5. `all_matches_found` true bo'lishi uchun barcha rasmiy matchlar topilganmi?
+
+PROMPT TUGASHI.
+
+QO'LLASH MISOLI
+---------------
+Prompt ichidagi [MATCHDAY_NUMBER] o'rniga faqat 6 yozing:
+
+UEFA Champions League 2026/27 mavsumining Matchday 6 bosqichidagi BARCHA matchlarni internetdan top.
+
+Keyingi safar faqat 6 ni 7 ga almashtiring. Qolgan prompt o'zgarmaydi.
+
+
+9. MA'LUMOTLARNI DATABASE’DA XAVFSIZ SAQLASH PROMPTI
+------------------------------------------------------
+Yuqoridagi JSON ma'lumotlarini PostgreSQL bazasiga yozishdan oldin quyidagi xavfsizlik qoidalariga amal qil.
+
+1. Ma'lumotni to'g'ridan-to'g'ri asosiy jadvalga yozma. Avval source_url, fetched_at, raw_json va parser_status bilan raw/import log saqla.
+2. Faqat JSON validation muvaffaqiyatli bo'lsa asosiy jadvallarni yangila.
+3. `MATCH_ID`, `source_match_id`, `GOAL_ID` va player identifier bo'yicha duplicate tekshir.
+4. Yangi ma'lumot uchun INSERT, mavjud ma'lumot uchun faqat ishonchli va yangiroq qiymatlarni UPSERT qil.
+5. Bo'sh yoki UNKNOWN qiymatlar bilan eski to'g'ri qiymatlarni almashtirma.
+6. Barcha match, goal, player va prediction yangilanishlarini bitta PostgreSQL transaction ichida bajar.
+7. Xato bo'lsa ROLLBACK qil; yarimta yuklangan ma'lumotni qoldirma.
+8. Har bir import uchun sync_logs yozuvi yarat:
+   - run_id
+   - started_at
+   - finished_at
+   - source_urls
+   - records_found
+   - records_inserted
+   - records_updated
+   - records_rejected
+   - status
+   - error_message
+9. Source URL va olingan vaqtni har bir import yozuvida saqla.
+10. AI confidence 0.85 dan past bo'lsa, ma'lumotni `pending_review` holatida saqla va asosiy prediction modeliga qo'shma.
+11. Score, goal eventlar soni va final result o'zaro mos kelmasa, matchni `needs_review` holatida qoldir.
+12. Database paroli, API key va OpenAI key’ni JSON, prompt, Git yoki source code ichiga yozma. Ularni Railway environment variables’dan ol.
+13. SQL query’larni string bilan birlashtirma; parameterized query va whitelist qilingan table/column nomlaridan foydalan.
+14. Har bir importdan oldin mavjud recordlarni o'chirma. UPSERT ishlat, tarixiy ma'lumotni saqla.
+15. O'zgargan eski qiymatlarni audit_history yoki raw payload ichida saqla.
+16. Prediction faqat transaction commit bo'lgandan keyin ishga tushsin.
+
+Tavsiya qilinadigan jadvallar:
+- `sync_logs`: har bir internet qidiruvi va import holati;
+- `raw_source_data`: o'zgartirilmagan source JSON/HTML va source URL;
+- `match_events`: goal, card, substitution kabi eventlar;
+- `audit_history`: eski va yangi qiymatlar;
+- asosiy `matches`, `players`, `goals`, `teams`, `stadiums`, `predictions` jadvallari.
+
+Database update natijasini quyidagi JSON formatida qaytar:
+{
+  "transaction_status": "COMMITTED|ROLLED_BACK|PENDING_REVIEW",
+  "run_id": "",
+  "records_found": 0,
+  "records_inserted": 0,
+  "records_updated": 0,
+  "records_skipped": 0,
+  "records_rejected": 0,
+  "validation_errors": [],
+  "source_urls": [],
+  "database_tables_updated": [],
+  "prediction_run_allowed": false
+}
