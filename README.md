@@ -45,6 +45,8 @@ Ma’lumotlar `public` schema’dagi `matches`, `players`, `goals`, `teams`, `st
 
 Railway worker yangi Matchday ma’lumotlarini oladi, source URL va raw payload’ni audit qiladi, validation va duplicate tekshiruvdan o‘tkazadi, PostgreSQL’ga transaction ichida UPSERT qiladi va commit’dan keyin prediction pipeline’ni ishga tushiradi.
 
+Railway build uchun repository root’ida `requirements.txt` va `railway.toml` mavjud. Service Settings’da Root Directory bo‘sh yoki `/` bo‘lishi kerak. Start command `python railway_worker.py` orqali har `SYNC_INTERVAL_MINUTES` da prediction worker ishga tushadi.
+
 Railway Variables:
 
 ```env
