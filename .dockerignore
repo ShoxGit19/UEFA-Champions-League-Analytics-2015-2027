@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pbix
+excel_nusxalar
+photo
+ucl_prediction_center/reports
+ucl_prediction_center/models
+README.md
+internet_qidiruv_promptlari.txt
