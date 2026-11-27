@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 MIN_INTERVAL_MINUTES = 5
-DAILY_SYNC_HOUR_UTC = min(23, max(0, int(os.getenv("DAILY_SYNC_HOUR_UTC", "9"))))
+DAILY_SYNC_HOUR_UTC = min(23, max(0, int(os.getenv("DAILY_SYNC_HOUR_UTC", "4"))))
 MAX_RETRIES = max(1, int(os.getenv("SYNC_MAX_RETRIES", "3")))
 RETRY_BACKOFF_SECONDS = max(5, int(os.getenv("SYNC_RETRY_BACKOFF_SECONDS", "30")))
 STATE = {"status": "starting", "last_success_at": None, "last_failure_at": None,
