@@ -36,9 +36,10 @@ def set_state(**values):
 def notify(message):
     """Optional Telegram and SMTP alerts; alert failures never stop the worker."""
     try:
-        token, chat_id = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
-        if token and chat_id:
-            data = urllib.parse.urlencode({"chat_id": chat_id, "text": message}).encode()
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        admin_chat_id = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+        if token and admin_chat_id:
+            data = urllib.parse.urlencode({"chat_id": admin_chat_id, "text": message}).encode()
             urllib.request.urlopen(urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data), timeout=15).read()
         host, user, password, recipient = (os.getenv(k) for k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_TO"))
         if host and recipient:
