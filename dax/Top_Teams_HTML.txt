@@ -1,0 +1,367 @@
+﻿Top_Teams_HTML = 
+VAR SeasonToShow =
+    COALESCE(
+        SELECTEDVALUE('public matches'[SEASON]),
+        MAXX(
+            FILTER(
+                ALL('public matches'),
+                NOT ISBLANK('public matches'[HOME_TEAM_SCORE])
+                    && NOT ISBLANK('public matches'[AWAY_TEAM_SCORE])
+            ),
+            'public matches'[SEASON]
+        )
+    )
+
+VAR Games =
+    FILTER(
+        ALL('public matches'),
+        'public matches'[SEASON] = SeasonToShow
+            && 'public matches'[STAGE] = "League phase"
+            && NOT ISBLANK('public matches'[HOME_TEAM_SCORE])
+            && NOT ISBLANK('public matches'[AWAY_TEAM_SCORE])
+    )
+
+VAR TeamStats =
+    ADDCOLUMNS(
+        VALUES('public teams'[TEAM_NAME]),
+
+        "@Logo",
+            CALCULATE(
+                SELECTEDVALUE('public teams'[TEAM_URL])
+            ),
+
+        "@Played",
+            VAR TeamName = 'public teams'[TEAM_NAME]
+            RETURN
+                COUNTROWS(
+                    FILTER(
+                        Games,
+                        'public matches'[HOME_TEAM] = TeamName
+                            || 'public matches'[AWAY_TEAM] = TeamName
+                    )
+                ),
+
+        "@GF",
+            VAR TeamName = 'public teams'[TEAM_NAME]
+            RETURN
+                COALESCE(
+                    SUMX(
+                        Games,
+                        SWITCH(
+                            TRUE(),
+                            'public matches'[HOME_TEAM] = TeamName,
+                                'public matches'[HOME_TEAM_SCORE],
+                            'public matches'[AWAY_TEAM] = TeamName,
+                                'public matches'[AWAY_TEAM_SCORE],
+                            0
+                        )
+                    ),
+                    0
+                ),
+
+        "@GA",
+            VAR TeamName = 'public teams'[TEAM_NAME]
+            RETURN
+                COALESCE(
+                    SUMX(
+                        Games,
+                        SWITCH(
+                            TRUE(),
+                            'public matches'[HOME_TEAM] = TeamName,
+                                'public matches'[AWAY_TEAM_SCORE],
+                            'public matches'[AWAY_TEAM] = TeamName,
+                                'public matches'[HOME_TEAM_SCORE],
+                            0
+                        )
+                    ),
+                    0
+                ),
+
+        "@PTS",
+            VAR TeamName = 'public teams'[TEAM_NAME]
+            RETURN
+                COALESCE(
+                    SUMX(
+                        Games,
+                        SWITCH(
+                            TRUE(),
+                            'public matches'[HOME_TEAM] = TeamName,
+                                'public matches'[HOME_POINT],
+                            'public matches'[AWAY_TEAM] = TeamName,
+                                'public matches'[AWAY_POINT],
+                            0
+                        )
+                    ),
+                    0
+                )
+    )
+
+VAR WithGD =
+    ADDCOLUMNS(
+        FILTER(
+            TeamStats,
+            [@Played] > 0
+        ),
+        "@GD",
+            [@GF] - [@GA]
+    )
+
+VAR Ranked =
+    TOPN(
+        20,
+        WithGD,
+        [@PTS], DESC,
+        [@GD], DESC,
+        [@GF], DESC,
+        'public teams'[TEAM_NAME], ASC
+    )
+
+VAR MaxGF =
+    MAXX(
+        Ranked,
+        [@GF]
+    )
+
+VAR Body =
+    CONCATENATEX(
+        Ranked,
+
+        VAR TeamName = 'public teams'[TEAM_NAME]
+        VAR Logo = [@Logo]
+        VAR GF = [@GF]
+        VAR GA = [@GA]
+        VAR GD = [@GD]
+        VAR PTS = [@PTS]
+
+        VAR RankNo =
+            1
+                + COUNTROWS(
+                    FILTER(
+                        Ranked,
+                        [@PTS] > PTS
+                            || (
+                                [@PTS] = PTS
+                                    && [@GD] > GD
+                            )
+                            || (
+                                [@PTS] = PTS
+                                    && [@GD] = GD
+                                    && [@GF] > GF
+                            )
+                            || (
+                                [@PTS] = PTS
+                                    && [@GD] = GD
+                                    && [@GF] = GF
+                                    && 'public teams'[TEAM_NAME] < TeamName
+                            )
+                    )
+                )
+
+        VAR BarWidth =
+            DIVIDE(
+                GF,
+                MaxGF,
+                0
+            ) * 100
+
+        VAR GDColor =
+            SWITCH(
+                TRUE(),
+                GD > 0, "#24D9A1",
+                GD < 0, "#FF6575",
+                "#A6B8D5"
+            )
+
+        VAR GDText =
+            IF(
+                GD > 0,
+                "+",
+                ""
+            ) & FORMAT(GD, "0")
+
+        VAR LogoHTML =
+            IF(
+                NOT ISBLANK(Logo)
+                    && Logo <> "",
+                "<img src=""" & Logo
+                    & """ style=""width:100%;height:100%;object-fit:contain;""/>",
+                ""
+            )
+
+        RETURN
+            "<div style=""
+                display:flex;
+                align-items:center;
+                gap:9px;
+                min-height:49px;
+                padding:0 12px;
+                margin:3px 9px;
+                box-sizing:border-box;
+                background:rgba(35,80,200,0.16);
+                border:1px solid rgba(68,111,226,0.12);
+                border-radius:7px;
+            "">"
+
+                & "<div style=""
+                    width:22px;
+                    flex:0 0 22px;
+                    text-align:center;
+                    color:#D7E7FF;
+                    font-size:11px;
+                    font-weight:700;
+                "">"
+                & FORMAT(RankNo, "0")
+                & "</div>"
+
+                & "<div style=""
+                    width:30px;
+                    height:30px;
+                    flex:0 0 30px;
+                    padding:3px;
+                    box-sizing:border-box;
+                "">"
+                & LogoHTML
+                & "</div>"
+
+                & "<div style=""
+                    flex:1 1 160px;
+                    min-width:85px;
+                    overflow:hidden;
+                    white-space:nowrap;
+                    text-overflow:ellipsis;
+                    color:#F4F7FF;
+                    font-size:13px;
+                    font-weight:600;
+                "">"
+                & TeamName
+                & "</div>"
+
+                & "<div style=""
+                    flex:1 1 100px;
+                    min-width:35px;
+                    height:6px;
+                    overflow:hidden;
+                    border-radius:8px;
+                    background:rgba(128,162,220,0.13);
+                "">"
+
+                    & "<div style=""
+                        width:"
+                    & FORMAT(BarWidth, "0.0", "en-US")
+                    & "%;
+                        height:100%;
+                        border-radius:8px;
+                        background:linear-gradient(90deg,#00C5FF,#2858CF);
+                    ""></div>"
+
+                & "</div>"
+
+                & "<div style=""
+                    width:35px;
+                    flex:0 0 35px;
+                    text-align:center;
+                    color:#FFFFFF;
+                    font-size:14px;
+                    font-weight:700;
+                "">"
+                & FORMAT(GF, "0")
+                & "</div>"
+
+                & "<div style=""
+                    width:35px;
+                    flex:0 0 35px;
+                    text-align:center;
+                    color:#FF8795;
+                    font-size:14px;
+                "">"
+                & FORMAT(GA, "0")
+                & "</div>"
+
+                & "<div style=""
+                    width:40px;
+                    flex:0 0 40px;
+                    text-align:center;
+                    color:"
+                & GDColor
+                & ";
+                    font-size:13px;
+                    font-weight:700;
+                "">"
+                & GDText
+                & "</div>"
+
+                & "<div style=""
+                    width:42px;
+                    flex:0 0 42px;
+                    text-align:center;
+                    color:#FFFFFF;
+                    font-size:15px;
+                    font-weight:800;
+                "">"
+                & FORMAT(PTS, "0")
+                & "</div>"
+
+            & "</div>",
+
+        "",
+        [@PTS], DESC,
+        [@GD], DESC,
+        [@GF], DESC,
+        'public teams'[TEAM_NAME], ASC
+    )
+
+RETURN
+    "<div style=""
+        width:100%;
+        height:100%;
+        box-sizing:border-box;
+        overflow:auto;
+        background:linear-gradient(135deg,#071A37,#06112D 75%,#080E3F);
+        border:2px solid #142AA3;
+        border-radius:15px;
+        font-family:Segoe UI,Arial,sans-serif;
+        color:#FFFFFF;
+    "">"
+
+        & "<div style=""
+            padding:12px 20px;
+            border-bottom:1px solid rgba(80,128,255,0.15);
+            font-size:17px;
+            font-weight:700;
+            color:#FFFFFF;
+            letter-spacing:0.5px;
+        "">UEFA TEAM STANDINGS</div>"
+
+        & "<div style=""
+            display:flex;
+            align-items:center;
+            gap:9px;
+            padding:12px 21px 8px;
+            color:#89A5D8;
+            font-size:10px;
+            font-weight:700;
+            box-sizing:border-box;
+        "">"
+
+            & "<div style=""width:22px;flex:0 0 22px;"">#</div>"
+            & "<div style=""width:30px;flex:0 0 30px;""></div>"
+            & "<div style=""flex:1 1 160px;min-width:85px;"">CLUB</div>"
+            & "<div style=""flex:1 1 100px;min-width:35px;"">GOALS</div>"
+            & "<div style=""width:35px;flex:0 0 35px;text-align:center;"">GF</div>"
+            & "<div style=""width:35px;flex:0 0 35px;text-align:center;"">GA</div>"
+            & "<div style=""width:40px;flex:0 0 40px;text-align:center;"">GD</div>"
+            & "<div style=""width:42px;flex:0 0 42px;text-align:center;"">PTS</div>"
+
+        & "</div>"
+
+        & Body
+
+        & "<div style=""
+            padding:10px 20px;
+            border-top:1px solid rgba(80,128,255,0.12);
+            color:#728FBF;
+            font-size:10px;
+        "">GF: scored | GA: conceded | GD: difference</div>"
+
+    & "</div>"
+

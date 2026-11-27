@@ -1,0 +1,676 @@
+﻿UCL_Matchday_Control_Center_HTML = 
+VAR SeasonSelected =
+    COALESCE (
+        SELECTEDVALUE ( 'public matches'[SEASON] ),
+        "2024-2025"
+    )
+
+VAR SeasonLabel =
+    SUBSTITUTE ( SeasonSelected, "-", "/" )
+
+VAR SelectedTeam =
+    SELECTEDVALUE ( 'public teams'[TEAM_NAME] )
+
+VAR SelectedCountry =
+    SELECTEDVALUE ( 'public teams'[COUNTRY] )
+
+VAR BaseMatches =
+    FILTER (
+        ALLSELECTED ( 'public matches' ),
+        'public matches'[SEASON] = SeasonSelected
+            && 'public matches'[STAGE] = "League phase"
+            && NOT ISBLANK ( 'public matches'[MATCH_ID] )
+            && NOT ISBLANK ( 'public matches'[HOME_TEAM] )
+            && NOT ISBLANK ( 'public matches'[AWAY_TEAM] )
+            && NOT ISBLANK ( 'public matches'[DATE_TIME] )
+            && (
+                ISBLANK ( SelectedTeam )
+                    || 'public matches'[HOME_TEAM] = SelectedTeam
+                    || 'public matches'[AWAY_TEAM] = SelectedTeam
+            )
+            && (
+                ISBLANK ( SelectedCountry )
+                    || LOOKUPVALUE (
+                        'public teams'[COUNTRY],
+                        'public teams'[TEAM_NAME], 'public matches'[HOME_TEAM]
+                    ) = SelectedCountry
+                    || LOOKUPVALUE (
+                        'public teams'[COUNTRY],
+                        'public teams'[TEAM_NAME], 'public matches'[AWAY_TEAM]
+                    ) = SelectedCountry
+            )
+    )
+
+VAR MatchesWithMatchday =
+    ADDCOLUMNS (
+        BaseMatches,
+        "__MATCHDAY",
+            VAR MatchDate =
+                INT ( 'public matches'[DATE_TIME] )
+            RETURN
+                SWITCH (
+                    TRUE (),
+                    MatchDate >= DATE ( 2024, 9, 17 )
+                        && MatchDate <= DATE ( 2024, 9, 19 ), "MD1",
+                    MatchDate >= DATE ( 2024, 10, 1 )
+                        && MatchDate <= DATE ( 2024, 10, 2 ), "MD2",
+                    MatchDate >= DATE ( 2024, 10, 22 )
+                        && MatchDate <= DATE ( 2024, 10, 23 ), "MD3",
+                    MatchDate >= DATE ( 2024, 11, 5 )
+                        && MatchDate <= DATE ( 2024, 11, 6 ), "MD4",
+                    MatchDate >= DATE ( 2024, 11, 26 )
+                        && MatchDate <= DATE ( 2024, 11, 27 ), "MD5",
+                    MatchDate >= DATE ( 2024, 12, 10 )
+                        && MatchDate <= DATE ( 2024, 12, 11 ), "MD6",
+                    MatchDate >= DATE ( 2025, 1, 21 )
+                        && MatchDate <= DATE ( 2025, 1, 22 ), "MD7",
+                    MatchDate = DATE ( 2025, 1, 29 ), "MD8",
+                    "OTHER"
+                )
+    )
+
+VAR VisibleMinDate =
+    MINX (
+        ALLSELECTED ( 'public matches' ),
+        INT ( 'public matches'[DATE_TIME] )
+    )
+
+VAR VisibleMaxDate =
+    MAXX (
+        ALLSELECTED ( 'public matches' ),
+        INT ( 'public matches'[DATE_TIME] )
+    )
+
+VAR SelectedMatchday =
+    SWITCH (
+        TRUE (),
+        VisibleMinDate >= DATE ( 2024, 9, 17 )
+            && VisibleMaxDate <= DATE ( 2024, 9, 19 ), "MD1",
+        VisibleMinDate >= DATE ( 2024, 10, 1 )
+            && VisibleMaxDate <= DATE ( 2024, 10, 2 ), "MD2",
+        VisibleMinDate >= DATE ( 2024, 10, 22 )
+            && VisibleMaxDate <= DATE ( 2024, 10, 23 ), "MD3",
+        VisibleMinDate >= DATE ( 2024, 11, 5 )
+            && VisibleMaxDate <= DATE ( 2024, 11, 6 ), "MD4",
+        VisibleMinDate >= DATE ( 2024, 11, 26 )
+            && VisibleMaxDate <= DATE ( 2024, 11, 27 ), "MD5",
+        VisibleMinDate >= DATE ( 2024, 12, 10 )
+            && VisibleMaxDate <= DATE ( 2024, 12, 11 ), "MD6",
+        VisibleMinDate >= DATE ( 2025, 1, 21 )
+            && VisibleMaxDate <= DATE ( 2025, 1, 22 ), "MD7",
+        VisibleMinDate = DATE ( 2025, 1, 29 )
+            && VisibleMaxDate = DATE ( 2025, 1, 29 ), "MD8",
+        "MD1"
+    )
+
+VAR DisplayMatches =
+    FILTER (
+        MatchesWithMatchday,
+        [__MATCHDAY] = SelectedMatchday
+    )
+
+VAR MatchCount =
+    COUNTROWS ( DisplayMatches )
+
+VAR TotalGoals =
+    SUMX (
+        DisplayMatches,
+        COALESCE ( 'public matches'[HOME_TEAM_SCORE], 0 )
+            + COALESCE ( 'public matches'[AWAY_TEAM_SCORE], 0 )
+    )
+
+VAR TotalAttendance =
+    SUMX (
+        DisplayMatches,
+        COALESCE ( 'public matches'[ATTENDANCE], 0 )
+    )
+
+VAR AverageGoals =
+    DIVIDE ( TotalGoals, MatchCount )
+
+VAR SelectedMatchID =
+    SELECTEDVALUE ( 'public matches'[MATCH_ID] )
+
+VAR DetailMatch =
+    TOPN (
+        1,
+        FILTER (
+            DisplayMatches,
+            ISBLANK ( SelectedMatchID )
+                || 'public matches'[MATCH_ID] = SelectedMatchID
+        ),
+        'public matches'[DATE_TIME], ASC,
+        'public matches'[MATCH_ID], ASC
+    )
+
+VAR DetailMatchID =
+    MAXX ( DetailMatch, 'public matches'[MATCH_ID] )
+
+VAR DetailHomeTeam =
+    MAXX ( DetailMatch, 'public matches'[HOME_TEAM] )
+
+VAR DetailAwayTeam =
+    MAXX ( DetailMatch, 'public matches'[AWAY_TEAM] )
+
+VAR DetailHomeScore =
+    MAXX ( DetailMatch, 'public matches'[HOME_TEAM_SCORE] )
+
+VAR DetailAwayScore =
+    MAXX ( DetailMatch, 'public matches'[AWAY_TEAM_SCORE] )
+
+VAR DetailDateTime =
+    MAXX ( DetailMatch, 'public matches'[DATE_TIME] )
+
+VAR DetailStadium =
+    MAXX ( DetailMatch, 'public matches'[STADIUM] )
+
+VAR DetailAttendance =
+    MAXX ( DetailMatch, 'public matches'[ATTENDANCE] )
+
+VAR DetailHomeLogo =
+    LOOKUPVALUE (
+        'public teams'[TEAM_URL],
+        'public teams'[TEAM_NAME], DetailHomeTeam
+    )
+
+VAR DetailAwayLogo =
+    LOOKUPVALUE (
+        'public teams'[TEAM_URL],
+        'public teams'[TEAM_NAME], DetailAwayTeam
+    )
+
+VAR DetailCapacity =
+    LOOKUPVALUE (
+        'public stadiums'[CAPACITY],
+        'public stadiums'[NAME], DetailStadium
+    )
+
+VAR GoalRows =
+    FILTER (
+        ALL ( 'public goals' ),
+        'public goals'[MATCH_ID] = DetailMatchID
+            && 'public goals'[SEASON] = SeasonSelected
+    )
+
+VAR GoalRowsWithPlayers =
+    ADDCOLUMNS (
+        GoalRows,
+        "__SCORER_NAME",
+            LOOKUPVALUE (
+                'public players'[FULL_NAME],
+                'public players'[PLAYER_ID], 'public goals'[PID]
+            ),
+        "__ASSIST_NAME",
+            LOOKUPVALUE (
+                'public players'[FULL_NAME],
+                'public players'[PLAYER_ID], 'public goals'[ASSIST]
+            ),
+        "__SCORER_TEAM",
+            LOOKUPVALUE (
+                'public players'[TEAM],
+                'public players'[PLAYER_ID], 'public goals'[PID]
+            )
+    )
+
+VAR GoalRowsEnriched =
+    ADDCOLUMNS (
+        GoalRowsWithPlayers,
+        "__GOAL_TEAM",
+            VAR ScorerTeam = [__SCORER_TEAM]
+            VAR GoalDesc =
+                LOWER ( COALESCE ( 'public goals'[GOAL_DESC], "" ) )
+            VAR IsOwnGoal =
+                CONTAINSSTRING ( GoalDesc, "own" )
+                    || CONTAINSSTRING ( GoalDesc, "autogol" )
+            RETURN
+                IF (
+                    IsOwnGoal,
+                    IF (
+                        ScorerTeam = DetailHomeTeam,
+                        DetailAwayTeam,
+                        IF (
+                            ScorerTeam = DetailAwayTeam,
+                            DetailHomeTeam,
+                            BLANK ()
+                        )
+                    ),
+                    ScorerTeam
+                ),
+        "__TYPE_LABEL",
+            VAR GoalDesc =
+                LOWER ( COALESCE ( 'public goals'[GOAL_DESC], "" ) )
+            RETURN
+                SWITCH (
+                    TRUE (),
+                    CONTAINSSTRING ( GoalDesc, "own" )
+                        || CONTAINSSTRING ( GoalDesc, "autogol" ), "OG",
+                    CONTAINSSTRING ( GoalDesc, "pen" ), "PEN",
+                    ""
+                )
+    )
+
+VAR HomeGoals =
+    FILTER (
+        GoalRowsEnriched,
+        [__GOAL_TEAM] = DetailHomeTeam
+    )
+
+VAR AwayGoals =
+    FILTER (
+        GoalRowsEnriched,
+        [__GOAL_TEAM] = DetailAwayTeam
+    )
+
+VAR HomeGoalsHTML =
+    CONCATENATEX (
+        HomeGoals,
+        VAR Scorer =
+            COALESCE ( [__SCORER_NAME], "Unknown" )
+        VAR AssistName =
+            [__ASSIST_NAME]
+        VAR AssistText =
+            IF (
+                ISBLANK ( AssistName )
+                    || AssistName = "",
+                "Assist: вЂ”",
+                "Assist: " & AssistName
+            )
+        VAR GoalType =
+            IF (
+                [__TYPE_LABEL] = "",
+                "",
+                " (" & [__TYPE_LABEL] & ")"
+            )
+        RETURN
+            "<div style='display:flex;gap:8px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid rgba(175,200,255,.14);font-size:12px;'>"
+                & "<span style='min-width:38px;color:#00D9FF;font-weight:800;'>"
+                & FORMAT ( 'public goals'[DURATION], "0" )
+                & "'</span>"
+                & "<span style='color:#FFFFFF;'>вљЅ</span>"
+                & "<span style='flex:1;color:#FFFFFF;'>"
+                & Scorer
+                & GoalType
+                & "<br><span style='font-size:10px;color:#9CB8E8;'>"
+                & AssistText
+                & "</span></span></div>",
+        "",
+        'public goals'[DURATION], ASC,
+        'public goals'[GOAL_ID], ASC
+    )
+
+VAR AwayGoalsHTML =
+    CONCATENATEX (
+        AwayGoals,
+        VAR Scorer =
+            COALESCE ( [__SCORER_NAME], "Unknown" )
+        VAR AssistName =
+            [__ASSIST_NAME]
+        VAR AssistText =
+            IF (
+                ISBLANK ( AssistName )
+                    || AssistName = "",
+                "Assist: вЂ”",
+                "Assist: " & AssistName
+            )
+        VAR GoalType =
+            IF (
+                [__TYPE_LABEL] = "",
+                "",
+                " (" & [__TYPE_LABEL] & ")"
+            )
+        RETURN
+            "<div style='display:flex;gap:8px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid rgba(175,200,255,.14);font-size:12px;'>"
+                & "<span style='min-width:38px;color:#FF4F68;font-weight:800;'>"
+                & FORMAT ( 'public goals'[DURATION], "0" )
+                & "'</span>"
+                & "<span style='color:#FFFFFF;'>вљЅ</span>"
+                & "<span style='flex:1;color:#FFFFFF;'>"
+                & Scorer
+                & GoalType
+                & "<br><span style='font-size:10px;color:#9CB8E8;'>"
+                & AssistText
+                & "</span></span></div>",
+        "",
+        'public goals'[DURATION], ASC,
+        'public goals'[GOAL_ID], ASC
+    )
+
+VAR HomeGoalsFinal =
+    IF (
+        HomeGoalsHTML = "",
+        "<div style='padding:14px;color:#9CB8E8;'>Gol qayd etilmagan</div>",
+        HomeGoalsHTML
+    )
+
+VAR AwayGoalsFinal =
+    IF (
+        AwayGoalsHTML = "",
+        "<div style='padding:14px;color:#9CB8E8;'>Gol qayd etilmagan</div>",
+        AwayGoalsHTML
+    )
+
+VAR MatchRowsHTML =
+    CONCATENATEX (
+        DisplayMatches,
+        VAR CurrentMatchID =
+            'public matches'[MATCH_ID]
+        VAR HomeTeam =
+            'public matches'[HOME_TEAM]
+        VAR AwayTeam =
+            'public matches'[AWAY_TEAM]
+        VAR HomeScore =
+            'public matches'[HOME_TEAM_SCORE]
+        VAR AwayScore =
+            'public matches'[AWAY_TEAM_SCORE]
+        VAR StadiumName =
+            'public matches'[STADIUM]
+        VAR MatchDateTime =
+            'public matches'[DATE_TIME]
+        VAR HomeLogo =
+            LOOKUPVALUE (
+                'public teams'[TEAM_URL],
+                'public teams'[TEAM_NAME], HomeTeam
+            )
+        VAR AwayLogo =
+            LOOKUPVALUE (
+                'public teams'[TEAM_URL],
+                'public teams'[TEAM_NAME], AwayTeam
+            )
+        VAR Capacity =
+            LOOKUPVALUE (
+                'public stadiums'[CAPACITY],
+                'public stadiums'[NAME], StadiumName
+            )
+        VAR IsDetail =
+            CurrentMatchID = DetailMatchID
+        VAR RowColor =
+            IF (
+                IsDetail,
+                "#183873",
+                IF (
+                    MOD (
+                        RANKX (
+                            DisplayMatches,
+                            'public matches'[DATE_TIME],
+                            ,
+                            ASC,
+                            DENSE
+                        ),
+                        2
+                    ) = 0,
+                    "#0B2452",
+                    "#0D2858"
+                )
+            )
+        VAR HomeLogoHTML =
+            IF (
+                NOT ISBLANK ( HomeLogo )
+                    && HomeLogo <> "",
+                "<img src='" & HomeLogo
+                    & "' style='width:25px;height:25px;object-fit:contain;'/>",
+                "<span style='font-size:19px;'>вљЅ</span>"
+            )
+        VAR AwayLogoHTML =
+            IF (
+                NOT ISBLANK ( AwayLogo )
+                    && AwayLogo <> "",
+                "<img src='" & AwayLogo
+                    & "' style='width:25px;height:25px;object-fit:contain;'/>",
+                "<span style='font-size:19px;'>вљЅ</span>"
+            )
+        RETURN
+            "<div style='display:grid;grid-template-columns:72px 28px minmax(95px,1fr) 70px minmax(95px,1fr) 28px 105px;align-items:center;gap:6px;min-height:48px;padding:6px 9px;background:"
+                & RowColor
+                & ";border-bottom:1px solid rgba(175,200,255,.14);font-family:Segoe UI,Arial,sans-serif;'>"
+                & "<div style='font-size:10px;line-height:13px;color:#AFC8FF;'>"
+                & FORMAT ( MatchDateTime, "dd MMM yyyy" )
+                & "<br>"
+                & FORMAT ( MatchDateTime, "HH:mm" )
+                & "</div>"
+                & "<div style='text-align:center;'>"
+                & HomeLogoHTML
+                & "</div>"
+                & "<div style='font-size:11px;font-weight:700;color:#FFFFFF;overflow-wrap:anywhere;'>"
+                & HomeTeam
+                & "</div>"
+                & "<div style='text-align:center;color:#FFFFFF;font-size:16px;font-weight:900;'>"
+                & FORMAT ( HomeScore, "0" )
+                & " - "
+                & FORMAT ( AwayScore, "0" )
+                & "</div>"
+                & "<div style='font-size:11px;font-weight:700;color:#FFFFFF;overflow-wrap:anywhere;'>"
+                & AwayTeam
+                & "</div>"
+                & "<div style='text-align:center;'>"
+                & AwayLogoHTML
+                & "</div>"
+                & "<div style='font-size:9px;line-height:12px;color:#9CB8E8;text-align:right;overflow-wrap:anywhere;'>"
+                & StadiumName
+                & "<br>Capacity: "
+                & IF (
+                    ISBLANK ( Capacity ),
+                    "N/A",
+                    FORMAT ( Capacity, "#,##0" )
+                )
+                & "</div></div>",
+        "",
+        'public matches'[DATE_TIME], ASC,
+        'public matches'[MATCH_ID], ASC
+    )
+
+VAR MatchRowsFinal =
+    IF (
+        MatchRowsHTML = "",
+        "<div style='padding:30px;text-align:center;color:#9CB8E8;'>NO MATCHES FOUND</div>",
+        MatchRowsHTML
+    )
+
+VAR HeaderHTML =
+    "<div style='height:105px;display:grid;grid-template-columns:230px 1fr 260px;align-items:center;padding:0 28px;background:linear-gradient(135deg,#06102E 0%,#0A2C68 48%,#06102E 100%);border-bottom:2px solid #2456A2;'>"
+        & "<div style='text-align:center;color:#FFFFFF;'>"
+        & "<div style='font-size:34px;line-height:30px;'>вљЅ</div>"
+        & "<div style='font-size:13px;letter-spacing:1.5px;font-weight:800;'>UEFA</div>"
+        & "<div style='font-size:14px;letter-spacing:1.3px;font-weight:900;'>CHAMPIONS LEAGUE</div>"
+        & "</div>"
+        & "<div style='text-align:center;'>"
+        & "<div style='font-size:31px;font-weight:900;letter-spacing:1px;color:#FFFFFF;'>MATCHDAY CONTROL CENTER</div>"
+        & "<div style='margin-top:5px;font-size:12px;letter-spacing:1.2px;color:#00D9FF;'>ALL MATCHES вЂў RESULTS вЂў GOALS вЂў STADIUMS вЂў KEY STATS</div>"
+        & "</div>"
+        & "<div style='text-align:right;'>"
+        & "<div style='font-size:36px;line-height:38px;font-weight:900;color:#00D9FF;'>"
+        & SeasonLabel
+        & "</div>"
+        & "<div style='font-size:19px;letter-spacing:1.3px;color:#AFC8FF;font-weight:800;'>LEAGUE PHASE</div>"
+        & "</div></div>"
+
+VAR NavButton =
+    "<span style='display:inline-block;min-width:76px;margin:0 4px;padding:10px 16px;text-align:center;border-radius:7px;border:1px solid #178BFF;background:#0B2452;color:#FFFFFF;font-size:13px;font-weight:800;'>"
+
+VAR ActiveNavButton =
+    "<span style='display:inline-block;min-width:76px;margin:0 4px;padding:10px 16px;text-align:center;border-radius:7px;border:1px solid #00D9FF;background:#00D9FF;color:#06102E;font-size:13px;font-weight:900;'>"
+
+VAR NavigationHTML =
+    "<div style='height:52px;text-align:center;padding-top:8px;background:#07143A;border-bottom:1px solid #2456A2;'>"
+        & IF ( SelectedMatchday = "MD1", ActiveNavButton, NavButton ) & "MD1</span>"
+        & IF ( SelectedMatchday = "MD2", ActiveNavButton, NavButton ) & "MD2</span>"
+        & IF ( SelectedMatchday = "MD3", ActiveNavButton, NavButton ) & "MD3</span>"
+        & IF ( SelectedMatchday = "MD4", ActiveNavButton, NavButton ) & "MD4</span>"
+        & IF ( SelectedMatchday = "MD5", ActiveNavButton, NavButton ) & "MD5</span>"
+        & IF ( SelectedMatchday = "MD6", ActiveNavButton, NavButton ) & "MD6</span>"
+        & IF ( SelectedMatchday = "MD7", ActiveNavButton, NavButton ) & "MD7</span>"
+        & IF ( SelectedMatchday = "MD8", ActiveNavButton, NavButton ) & "MD8</span>"
+        & "</div>"
+
+VAR SidebarHTML =
+    "<div style='height:100%;padding:14px;background:#091B46;border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;'>"
+        & "<div style='font-size:19px;font-weight:900;color:#00D9FF;margin-bottom:14px;'>FILTERS</div>"
+        & "<div style='margin-bottom:10px;padding:9px 10px;border:1px solid #2456A2;border-radius:8px;background:#0B2452;'>"
+        & "<div style='font-size:11px;color:#AFC8FF;'>Season</div>"
+        & "<div style='margin-top:5px;font-size:13px;color:#FFFFFF;font-weight:800;'>"
+        & SeasonLabel
+        & "</div></div>"
+        & "<div style='margin-bottom:10px;padding:9px 10px;border:1px solid #2456A2;border-radius:8px;background:#0B2452;'>"
+        & "<div style='font-size:11px;color:#AFC8FF;'>Matchday</div>"
+        & "<div style='margin-top:5px;font-size:13px;color:#FFFFFF;font-weight:800;'>"
+        & SelectedMatchday
+        & "</div></div>"
+        & "<div style='margin-bottom:10px;padding:9px 10px;border:1px solid #2456A2;border-radius:8px;background:#0B2452;'>"
+        & "<div style='font-size:11px;color:#AFC8FF;'>Team</div>"
+        & "<div style='margin-top:5px;font-size:13px;color:#FFFFFF;font-weight:800;'>"
+        & COALESCE ( SelectedTeam, "All" )
+        & "</div></div>"
+        & "<div style='margin-bottom:10px;padding:9px 10px;border:1px solid #2456A2;border-radius:8px;background:#0B2452;'>"
+        & "<div style='font-size:11px;color:#AFC8FF;'>Country</div>"
+        & "<div style='margin-top:5px;font-size:13px;color:#FFFFFF;font-weight:800;'>"
+        & COALESCE ( SelectedCountry, "All" )
+        & "</div></div>"
+        & "<div style='margin-top:18px;padding:10px;text-align:center;border:1px solid #178BFF;border-radius:8px;color:#00D9FF;font-size:12px;font-weight:900;'>"
+        & "Use native Power BI slicers"
+        & "</div></div>"
+
+VAR KPIHTML =
+    "<div style='height:100%;padding:14px;background:#091B46;border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;'>"
+        & "<div style='font-size:18px;font-weight:900;color:#00D9FF;margin-bottom:10px;'>KEY FIGURES ("
+        & SelectedMatchday
+        & ")</div>"
+        & "<div style='display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid rgba(175,200,255,.18);'><span style='color:#AFC8FF;'>вљЅ Total Goals</span><b style='color:#FFFFFF;font-size:20px;'>"
+        & FORMAT ( TotalGoals, "#,##0" )
+        & "</b></div>"
+        & "<div style='display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid rgba(175,200,255,.18);'><span style='color:#AFC8FF;'>в–Ј Matches</span><b style='color:#FFFFFF;font-size:20px;'>"
+        & FORMAT ( MatchCount, "#,##0" )
+        & "</b></div>"
+        & "<div style='display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid rgba(175,200,255,.18);'><span style='color:#AFC8FF;'>в–¦ Total Cards</span><b style='color:#FFD34D;font-size:20px;'>N/A</b></div>"
+        & "<div style='display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid rgba(175,200,255,.18);'><span style='color:#AFC8FF;'>рџ‘Ґ Attendance</span><b style='color:#FFFFFF;font-size:16px;'>"
+        & IF (
+            TotalAttendance = 0,
+            "N/A",
+            FORMAT ( TotalAttendance, "#,##0" )
+        )
+        & "</b></div>"
+        & "<div style='display:flex;justify-content:space-between;padding:10px 4px;'><span style='color:#AFC8FF;'>в†— Avg Goals</span><b style='color:#00D9FF;font-size:20px;'>"
+        & FORMAT ( AverageGoals, "0.00" )
+        & "</b></div></div>"
+
+VAR MatchListHTML =
+    "<div style='height:100%;padding:12px;background:#091B46;border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;overflow:hidden;'>"
+        & "<div style='font-size:20px;font-weight:900;color:#00D9FF;padding:4px 6px 10px;'>MATCH LIST ("
+        & SelectedMatchday
+        & ")</div>"
+        & "<div style='display:grid;grid-template-columns:72px 28px minmax(95px,1fr) 70px minmax(95px,1fr) 28px 105px;gap:6px;padding:8px 9px;background:#102D63;color:#AFC8FF;font-size:10px;font-weight:800;'>"
+        & "<span>Date & Time</span><span></span><span>Home Team</span><span style='text-align:center;'>Score</span><span>Away Team</span><span></span><span style='text-align:right;'>Stadium</span></div>"
+        & "<div style='height:calc(100% - 65px);overflow:auto;'>"
+        & MatchRowsFinal
+        & "</div></div>"
+
+VAR DetailHeroHTML =
+    "<div style='height:205px;padding:16px;background:linear-gradient(135deg,#102C60,#07143A 70%);border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;'>"
+        & "<div style='font-size:20px;font-weight:900;color:#00D9FF;margin-bottom:8px;'>MATCH DETAIL</div>"
+        & "<div style='height:153px;display:grid;grid-template-columns:1fr 1.1fr 1fr;align-items:center;gap:10px;text-align:center;'>"
+        & "<div>"
+        & IF (
+            NOT ISBLANK ( DetailHomeLogo )
+                && DetailHomeLogo <> "",
+            "<img src='" & DetailHomeLogo
+                & "' style='width:70px;height:70px;object-fit:contain;'/>",
+            "<div style='font-size:50px;'>вљЅ</div>"
+        )
+        & "<div style='margin-top:5px;color:#FFFFFF;font-size:14px;font-weight:900;overflow-wrap:anywhere;'>"
+        & COALESCE ( DetailHomeTeam, "Home Team" )
+        & "</div></div>"
+        & "<div>"
+        & "<div style='font-size:47px;font-weight:900;color:#FFFFFF;'>"
+        & COALESCE ( FORMAT ( DetailHomeScore, "0" ), "0" )
+        & " - "
+        & COALESCE ( FORMAT ( DetailAwayScore, "0" ), "0" )
+        & "</div>"
+        & "<div style='margin-top:5px;color:#AFC8FF;font-size:12px;'>"
+        & IF (
+            ISBLANK ( DetailDateTime ),
+            "Date N/A",
+            FORMAT ( DetailDateTime, "dd MMM yyyy  HH:mm" )
+        )
+        & "</div>"
+        & "<div style='margin-top:4px;color:#FFFFFF;font-size:12px;font-weight:800;'>"
+        & COALESCE ( DetailStadium, "Stadium N/A" )
+        & "</div>"
+        & "<div style='color:#9CB8E8;font-size:11px;'>Capacity: "
+        & IF (
+            ISBLANK ( DetailCapacity ),
+            "N/A",
+            FORMAT ( DetailCapacity, "#,##0" )
+        )
+        & "</div></div>"
+        & "<div>"
+        & IF (
+            NOT ISBLANK ( DetailAwayLogo )
+                && DetailAwayLogo <> "",
+            "<img src='" & DetailAwayLogo
+                & "' style='width:70px;height:70px;object-fit:contain;'/>",
+            "<div style='font-size:50px;'>вљЅ</div>"
+        )
+        & "<div style='margin-top:5px;color:#FFFFFF;font-size:14px;font-weight:900;overflow-wrap:anywhere;'>"
+        & COALESCE ( DetailAwayTeam, "Away Team" )
+        & "</div></div></div></div>"
+
+VAR DetailTabsHTML =
+    "<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;'>"
+        & "<div style='padding:10px 4px;text-align:center;border:1px solid #178BFF;border-radius:7px;background:#0B2452;color:#FFFFFF;font-size:11px;font-weight:800;'>OVERVIEW</div>"
+        & "<div style='padding:10px 4px;text-align:center;border:1px solid #00D9FF;border-radius:7px;background:#00D9FF;color:#06102E;font-size:11px;font-weight:900;'>GOALS</div>"
+        & "<div style='padding:10px 4px;text-align:center;border:1px solid #178BFF;border-radius:7px;background:#0B2452;color:#FFFFFF;font-size:11px;font-weight:800;'>STATS</div>"
+        & "<div style='padding:10px 4px;text-align:center;border:1px solid #178BFF;border-radius:7px;background:#0B2452;color:#FFFFFF;font-size:11px;font-weight:800;'>LINEUPS</div>"
+        & "<div style='padding:10px 4px;text-align:center;border:1px solid #178BFF;border-radius:7px;background:#0B2452;color:#FFFFFF;font-size:11px;font-weight:800;'>TIMELINE</div>"
+        & "</div>"
+
+VAR GoalsPanelHTML =
+    "<div style='margin-top:10px;height:235px;padding:12px;background:#091B46;border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;overflow:hidden;'>"
+        & "<div style='font-size:19px;font-weight:900;color:#00D9FF;margin-bottom:8px;'>GOALS & ASSISTS</div>"
+        & "<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;height:calc(100% - 35px);'>"
+        & "<div style='background:#07143A;border:1px solid #2456A2;overflow:auto;'>"
+        & "<div style='padding:7px 8px;background:#102D63;color:#FFFFFF;font-weight:900;font-size:13px;'>"
+        & COALESCE ( DetailHomeTeam, "Home Team" )
+        & " ("
+        & FORMAT ( DetailHomeScore, "0" )
+        & ")</div>"
+        & HomeGoalsFinal
+        & "</div>"
+        & "<div style='background:#07143A;border:1px solid #2456A2;overflow:auto;'>"
+        & "<div style='padding:7px 8px;background:#102D63;color:#FFFFFF;font-weight:900;font-size:13px;'>"
+        & COALESCE ( DetailAwayTeam, "Away Team" )
+        & " ("
+        & FORMAT ( DetailAwayScore, "0" )
+        & ")</div>"
+        & AwayGoalsFinal
+        & "</div></div></div>"
+
+VAR StatsPanelHTML =
+    "<div style='margin-top:10px;height:150px;padding:12px;background:#091B46;border:1px solid #2456A2;border-radius:10px;box-sizing:border-box;font-family:Segoe UI,Arial,sans-serif;'>"
+        & "<div style='font-size:19px;font-weight:900;color:#00D9FF;margin-bottom:9px;'>MATCH STATISTICS</div>"
+        & "<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:7px;'>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Shots<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>On Target<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Possession<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Passes<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Corners<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Fouls<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Yellow Cards<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "<div style='padding:12px 5px;text-align:center;border:1px solid #2456A2;border-radius:7px;background:#0B2452;color:#AFC8FF;font-size:10px;'>Red Cards<br><b style='font-size:14px;color:#FFFFFF;'>N/A - N/A</b></div>"
+        & "</div></div>"
+
+RETURN
+    "<div style='width:100%;height:100%;min-height:900px;background:#07143A;color:#FFFFFF;font-family:Segoe UI,Arial,sans-serif;overflow:auto;box-sizing:border-box;'>"
+        & HeaderHTML
+        & NavigationHTML
+        & "<div style='display:grid;grid-template-columns:225px minmax(560px,1fr) minmax(620px,1.1fr);gap:10px;padding:12px 18px 18px;box-sizing:border-box;'>"
+        & "<div style='display:grid;grid-template-rows:405px 290px;gap:10px;'>"
+        & SidebarHTML
+        & KPIHTML
+        & "</div>"
+        & MatchListHTML
+        & "<div style='min-width:0;'>"
+        & DetailHeroHTML
+        & DetailTabsHTML
+        & GoalsPanelHTML
+        & StatsPanelHTML
+        & "</div>"
+        & "</div></div>"
+

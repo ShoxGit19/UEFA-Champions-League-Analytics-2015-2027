@@ -43,6 +43,7 @@ def run(args):
     if len(history)>=config.minimum_training:
         print('Fitting final models on all eligible historical matches...',flush=True)
         bundle=ModelBundle().fit(X,history)
+    report['training_sample_count']=len(history)
     predictions=predict(upcoming,Z,bundle,selected,report,catalog,cutoff,config)
     warnings=validation['data_quality_warnings']+schema_warnings+team_warnings+load_warnings
     warnings.extend([f'{k}: {v} affected match rows' for k,v in validation['issue_counts'].items()])

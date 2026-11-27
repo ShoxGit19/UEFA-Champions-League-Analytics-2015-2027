@@ -1,0 +1,938 @@
+﻿Team_Rank_Timeline_HTML = 
+VAR SelectedSeasonRaw =
+    SELECTEDVALUE ( 'public matches'[SEASON] )
+
+VAR FallbackSeason =
+    CONCATENATEX (
+        TOPN (
+            1,
+            FILTER (
+                ALL ( 'public matches' ),
+                'public matches'[STAGE] = "League phase"
+                    && NOT ISBLANK ( 'public matches'[HOME_TEAM_SCORE] )
+                    && NOT ISBLANK ( 'public matches'[AWAY_TEAM_SCORE] )
+                    && NOT ISBLANK ( 'public matches'[DATE_TIME] )
+            ),
+            'public matches'[SEASON], DESC,
+            'public matches'[DATE_TIME], DESC,
+            'public matches'[MATCH_ID], DESC
+        ),
+        'public matches'[SEASON],
+        ""
+    )
+
+VAR SeasonKey =
+    COALESCE (
+        SUBSTITUTE ( SelectedSeasonRaw, "/", "-" ),
+        SUBSTITUTE ( FallbackSeason, "/", "-" )
+    )
+
+VAR SeasonLabel =
+    SUBSTITUTE ( SeasonKey, "-", "/" )
+
+VAR Fixtures =
+    FILTER (
+        ALL ( 'public matches' ),
+        SUBSTITUTE ( 'public matches'[SEASON], "/", "-" ) = SeasonKey
+            && 'public matches'[STAGE] = "League phase"
+            && NOT ISBLANK ( 'public matches'[HOME_TEAM] )
+            && NOT ISBLANK ( 'public matches'[AWAY_TEAM] )
+            && 'public matches'[HOME_TEAM] <> ""
+            && 'public matches'[AWAY_TEAM] <> ""
+    )
+
+VAR Played =
+    FILTER (
+        Fixtures,
+        NOT ISBLANK ( 'public matches'[HOME_TEAM_SCORE] )
+            && NOT ISBLANK ( 'public matches'[AWAY_TEAM_SCORE] )
+            && NOT ISBLANK ( 'public matches'[DATE_TIME] )
+            && NOT ISBLANK ( 'public matches'[MATCH_ID] )
+    )
+
+VAR AllClubs =
+    DISTINCT (
+        FILTER (
+            UNION (
+                SELECTCOLUMNS (
+                    Fixtures,
+                    "Club", 'public matches'[HOME_TEAM]
+                ),
+                SELECTCOLUMNS (
+                    Fixtures,
+                    "Club", 'public matches'[AWAY_TEAM]
+                )
+            ),
+            NOT ISBLANK ( [Club] )
+                && [Club] <> ""
+        )
+    )
+
+VAR ClubCount =
+    COUNTROWS ( AllClubs )
+
+VAR FinalStats =
+    ADDCOLUMNS (
+        AllClubs,
+
+        "@PTS",
+            VAR ThisClub = [Club]
+            RETURN
+                COALESCE (
+                    SUMX (
+                        FILTER (
+                            Played,
+                            'public matches'[HOME_TEAM] = ThisClub
+                                || 'public matches'[AWAY_TEAM] = ThisClub
+                        ),
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[HOME_POINT],
+                            'public matches'[AWAY_POINT]
+                        )
+                    ),
+                    0
+                ),
+
+        "@GF",
+            VAR ThisClub = [Club]
+            RETURN
+                COALESCE (
+                    SUMX (
+                        FILTER (
+                            Played,
+                            'public matches'[HOME_TEAM] = ThisClub
+                                || 'public matches'[AWAY_TEAM] = ThisClub
+                        ),
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[HOME_TEAM_SCORE],
+                            'public matches'[AWAY_TEAM_SCORE]
+                        )
+                    ),
+                    0
+                ),
+
+        "@GA",
+            VAR ThisClub = [Club]
+            RETURN
+                COALESCE (
+                    SUMX (
+                        FILTER (
+                            Played,
+                            'public matches'[HOME_TEAM] = ThisClub
+                                || 'public matches'[AWAY_TEAM] = ThisClub
+                        ),
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[AWAY_TEAM_SCORE],
+                            'public matches'[HOME_TEAM_SCORE]
+                        )
+                    ),
+                    0
+                )
+    )
+
+VAR FinalWithGD =
+    ADDCOLUMNS (
+        FinalStats,
+        "@GD", [@GF] - [@GA]
+    )
+
+VAR Clubs =
+    SELECTCOLUMNS (
+        FinalWithGD,
+        "Club", [Club]
+    )
+
+VAR ClubCountFinal =
+    COUNTROWS ( Clubs )
+
+VAR ClubDetails =
+    ADDCOLUMNS (
+        Clubs,
+
+        "@Titles",
+            VAR ThisClub = [Club]
+            RETURN
+                COALESCE (
+                    MAXX (
+                        FILTER (
+                            ALL ( 'public teams' ),
+                            'public teams'[TEAM_NAME] = ThisClub
+                        ),
+                        'public teams'[UCL_TITLES]
+                    ),
+                    0
+                ),
+
+        "@Logo",
+            VAR ThisClub = [Club]
+            RETURN
+                MAXX (
+                    FILTER (
+                        ALL ( 'public teams' ),
+                        'public teams'[TEAM_NAME] = ThisClub
+                    ),
+                    'public teams'[TEAM_URL]
+                )
+    )
+
+VAR LastRound =
+    MIN (
+        8,
+        COALESCE (
+            MAXX (
+                Clubs,
+                VAR ThisClub = [Club]
+                RETURN
+                    COUNTROWS (
+                        FILTER (
+                            Played,
+                            'public matches'[HOME_TEAM] = ThisClub
+                                || 'public matches'[AWAY_TEAM] = ThisClub
+                        )
+                    )
+            ),
+            0
+        )
+    )
+
+VAR Rounds =
+    SELECTCOLUMNS (
+        GENERATESERIES ( 1, 8, 1 ),
+        "RoundNo", [Value]
+    )
+
+VAR ClubRounds =
+    CROSSJOIN (
+        Clubs,
+        Rounds
+    )
+
+VAR Scores =
+    ADDCOLUMNS (
+        ClubRounds,
+
+        "@PTS",
+            VAR ThisClub = [Club]
+            VAR ThisRound = [RoundNo]
+            VAR Games =
+                TOPN (
+                    ThisRound,
+                    FILTER (
+                        Played,
+                        'public matches'[HOME_TEAM] = ThisClub
+                            || 'public matches'[AWAY_TEAM] = ThisClub
+                    ),
+                    'public matches'[DATE_TIME], ASC,
+                    'public matches'[MATCH_ID], ASC
+                )
+            RETURN
+                COALESCE (
+                    SUMX (
+                        Games,
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[HOME_POINT],
+                            'public matches'[AWAY_POINT]
+                        )
+                    ),
+                    0
+                ),
+
+        "@GF",
+            VAR ThisClub = [Club]
+            VAR ThisRound = [RoundNo]
+            VAR Games =
+                TOPN (
+                    ThisRound,
+                    FILTER (
+                        Played,
+                        'public matches'[HOME_TEAM] = ThisClub
+                            || 'public matches'[AWAY_TEAM] = ThisClub
+                    ),
+                    'public matches'[DATE_TIME], ASC,
+                    'public matches'[MATCH_ID], ASC
+                )
+            RETURN
+                COALESCE (
+                    SUMX (
+                        Games,
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[HOME_TEAM_SCORE],
+                            'public matches'[AWAY_TEAM_SCORE]
+                        )
+                    ),
+                    0
+                ),
+
+        "@GA",
+            VAR ThisClub = [Club]
+            VAR ThisRound = [RoundNo]
+            VAR Games =
+                TOPN (
+                    ThisRound,
+                    FILTER (
+                        Played,
+                        'public matches'[HOME_TEAM] = ThisClub
+                            || 'public matches'[AWAY_TEAM] = ThisClub
+                    ),
+                    'public matches'[DATE_TIME], ASC,
+                    'public matches'[MATCH_ID], ASC
+                )
+            RETURN
+                COALESCE (
+                    SUMX (
+                        Games,
+                        IF (
+                            'public matches'[HOME_TEAM] = ThisClub,
+                            'public matches'[AWAY_TEAM_SCORE],
+                            'public matches'[HOME_TEAM_SCORE]
+                        )
+                    ),
+                    0
+                )
+    )
+
+VAR ScoresWithGD =
+    ADDCOLUMNS (
+        Scores,
+        "@GD", [@GF] - [@GA]
+    )
+
+VAR MatchRanking =
+    ADDCOLUMNS (
+        ScoresWithGD,
+
+        "@Rank",
+            VAR ThisRound = [RoundNo]
+            VAR ThisClub = [Club]
+            VAR ThisPts = [@PTS]
+            VAR ThisGD = [@GD]
+            VAR ThisGF = [@GF]
+            RETURN
+                1
+                    + COUNTROWS (
+                        FILTER (
+                            ScoresWithGD,
+                            [RoundNo] = ThisRound
+                                &&
+                                (
+                                    [@PTS] > ThisPts
+                                        ||
+                                    (
+                                        [@PTS] = ThisPts
+                                            && [@GD] > ThisGD
+                                    )
+                                        ||
+                                    (
+                                        [@PTS] = ThisPts
+                                            && [@GD] = ThisGD
+                                            && [@GF] > ThisGF
+                                    )
+                                        ||
+                                    (
+                                        [@PTS] = ThisPts
+                                            && [@GD] = ThisGD
+                                            && [@GF] = ThisGF
+                                            && [Club] < ThisClub
+                                    )
+                                )
+                        )
+                    )
+    )
+
+VAR FirstRoundRanking =
+    FILTER (
+        MatchRanking,
+        [RoundNo] = 1
+    )
+
+VAR InitialRanking =
+    ADDCOLUMNS (
+        ClubDetails,
+
+        "@InitialRank",
+            VAR ThisClub = [Club]
+            VAR ThisTitles = [@Titles]
+            RETURN
+                1
+                    + COUNTROWS (
+                        FILTER (
+                            ClubDetails,
+                            [@Titles] > ThisTitles
+                                ||
+                            (
+                                [@Titles] = ThisTitles
+                                    && [Club] < ThisClub
+                            )
+                        )
+                    ),
+
+        "@FirstMatchRank",
+            VAR ThisClub = [Club]
+            RETURN
+                COALESCE (
+                    MAXX (
+                        FILTER (
+                            FirstRoundRanking,
+                            [Club] = ThisClub
+                        ),
+                        [@Rank]
+                    ),
+                    ClubCountFinal
+                )
+    )
+
+VAR InitialPoints =
+    SELECTCOLUMNS (
+        InitialRanking,
+        "Club", [Club],
+        "RoundNo", 0,
+        "PTS", 0,
+        "GF", 0,
+        "GA", 0,
+        "GD", 0,
+        "RankNo", [@InitialRank]
+    )
+
+VAR MatchPoints =
+    SELECTCOLUMNS (
+        MatchRanking,
+        "Club", [Club],
+        "RoundNo", [RoundNo],
+        "PTS", [@PTS],
+        "GF", [@GF],
+        "GA", [@GA],
+        "GD", [@GD],
+        "RankNo", [@Rank]
+    )
+
+VAR FullHistory =
+    UNION (
+        InitialPoints,
+        MatchPoints
+    )
+
+VAR TeamsStyled =
+    ADDCOLUMNS (
+        InitialRanking,
+
+        "@Color",
+            VAR ThisClub = LOWER ( [Club] )
+            VAR ThisRank = [@InitialRank]
+            VAR Hue =
+                MOD (
+                    ( ThisRank - 1 ) * 137,
+                    360
+                )
+            VAR Fallback =
+                "hsl("
+                    & FORMAT ( Hue, "0" )
+                    & ",85%,67%)"
+            RETURN
+                SWITCH (
+                    TRUE (),
+
+                    CONTAINSSTRING ( ThisClub, "real madrid" ),
+                        "#F4D36B",
+
+                    CONTAINSSTRING ( ThisClub, "barcelona" ),
+                        "#C13B91",
+
+                    CONTAINSSTRING ( ThisClub, "bayern" ),
+                        "#F33F58",
+
+                    CONTAINSSTRING ( ThisClub, "manchester city" ),
+                        "#69C9F5",
+
+                    CONTAINSSTRING ( ThisClub, "manchester united" ),
+                        "#FF5656",
+
+                    CONTAINSSTRING ( ThisClub, "liverpool" ),
+                        "#E84B55",
+
+                    CONTAINSSTRING ( ThisClub, "arsenal" ),
+                        "#FA6470",
+
+                    CONTAINSSTRING ( ThisClub, "chelsea" ),
+                        "#377CFF",
+
+                    CONTAINSSTRING ( ThisClub, "paris saint-germain" ),
+                        "#E45888",
+
+                    CONTAINSSTRING ( ThisClub, "inter" ),
+                        "#369EFF",
+
+                    CONTAINSSTRING ( ThisClub, "ac milan" ),
+                        "#E94049",
+
+                    CONTAINSSTRING ( ThisClub, "dortmund" ),
+                        "#FFE34B",
+
+                    CONTAINSSTRING ( ThisClub, "sporting" ),
+                        "#42DB91",
+
+                    CONTAINSSTRING ( ThisClub, "atletico" ),
+                        "#F46777",
+
+                    CONTAINSSTRING ( ThisClub, "atlГ©tico" ),
+                        "#F46777",
+
+                    CONTAINSSTRING ( ThisClub, "juventus" ),
+                        "#DDE4F3",
+
+                    CONTAINSSTRING ( ThisClub, "porto" ),
+                        "#5797FF",
+
+                    CONTAINSSTRING ( ThisClub, "benfica" ),
+                        "#FF6C6C",
+
+                    CONTAINSSTRING ( ThisClub, "psv" ),
+                        "#FF8E72",
+
+                    CONTAINSSTRING ( ThisClub, "feyenoord" ),
+                        "#FFB18D",
+
+                    CONTAINSSTRING ( ThisClub, "aston villa" ),
+                        "#C17BD1",
+
+                    CONTAINSSTRING ( ThisClub, "leipzig" ),
+                        "#F3698C",
+
+                    CONTAINSSTRING ( ThisClub, "leverkusen" ),
+                        "#E9696C",
+
+                    CONTAINSSTRING ( ThisClub, "celtic" ),
+                        "#5AD899",
+
+                    CONTAINSSTRING ( ThisClub, "club brugge" ),
+                        "#4489F4",
+
+                    Fallback
+                )
+    )
+
+VAR StepX = 90
+VAR StartX = 35
+VAR StartY = 42
+VAR RowStep = 32
+VAR LegendWidth = 195
+VAR ResultWidth = 130
+
+VAR SvgWidth =
+    StartX
+        + ( 8 * StepX )
+        + ResultWidth
+
+VAR ChartHeight =
+    StartY
+        + ( ClubCountFinal * RowStep )
+
+VAR Legend =
+    CONCATENATEX (
+        TeamsStyled,
+
+        VAR ThisClub = [Club]
+        VAR Logo = [@Logo]
+        VAR Titles = [@Titles]
+        VAR RankNo = [@InitialRank]
+        VAR Color = [@Color]
+
+        VAR SafeName =
+            SUBSTITUTE (
+                SUBSTITUTE (
+                    SUBSTITUTE (
+                        SUBSTITUTE (
+                            ThisClub,
+                            "&", "&amp;"
+                        ),
+                        "<", "&lt;"
+                    ),
+                    ">", "&gt;"
+                ),
+                "'",
+                "&#39;"
+            )
+
+        RETURN
+            "<div style='height:32px;display:flex;align-items:center;gap:6px;padding:0 7px;box-sizing:border-box;border-bottom:1px solid rgba(55,92,175,0.18);background:#07143A;white-space:nowrap;overflow:hidden;'>"
+                & "<span style='width:19px;flex:0 0 19px;text-align:center;color:#AFC8FF;font-size:11px;font-weight:700;'>"
+                & FORMAT ( RankNo, "0" )
+                & "</span>"
+                & IF (
+                    NOT ISBLANK ( Logo )
+                        && Logo <> "",
+                    "<img src='"
+                        & Logo
+                        & "' style='width:22px;height:22px;flex:0 0 22px;object-fit:contain;'/>",
+                    "<span style='width:22px;'>вљЅ</span>"
+                )
+                & "<span style='width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:"
+                & Color
+                & ";'></span>"
+                & "<span title='"
+                & SafeName
+                & "' style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;font-weight:600;color:#FFFFFF;'>"
+                & SafeName
+                & "</span>"
+                & "<span style='min-width:16px;text-align:right;color:#AFC8FF;font-size:10px;font-weight:700;'>"
+                & FORMAT ( Titles, "0" )
+                & "</span>"
+                & "</div>",
+
+        "",
+        [@InitialRank], ASC
+    )
+
+VAR AxisRounds =
+    SELECTCOLUMNS (
+        GENERATESERIES ( 0, 8, 1 ),
+        "RoundNo", [Value]
+    )
+
+VAR VerticalGrid =
+    CONCATENATEX (
+        FILTER (
+            AxisRounds,
+            [RoundNo] <= LastRound
+        ),
+
+        VAR ThisRound = [RoundNo]
+        VAR X =
+            StartX
+                + ( ThisRound * StepX )
+
+        RETURN
+            "<line x1='"
+                & FORMAT ( X, "0", "en-US" )
+                & "' y1='22' x2='"
+                & FORMAT ( X, "0", "en-US" )
+                & "' y2='"
+                & FORMAT (
+                    StartY
+                        + ( ClubCountFinal - 1 ) * RowStep,
+                    "0",
+                    "en-US"
+                )
+                & "' stroke='#25447D' stroke-width='0.8' stroke-dasharray='3 5'/>"
+                & "<text x='"
+                & FORMAT ( X, "0", "en-US" )
+                & "' y='16' text-anchor='middle' fill='#B5CDF7' font-size='11' font-weight='700'>"
+                & IF (
+                    ThisRound = 0,
+                    "START",
+                    FORMAT ( ThisRound, "0" )
+                )
+                & "</text>",
+
+        "",
+        [RoundNo], ASC
+    )
+
+VAR HorizontalGrid =
+    CONCATENATEX (
+        GENERATESERIES (
+            1,
+            MAX ( 1, ClubCountFinal ),
+            1
+        ),
+
+        VAR Y =
+            StartY
+                + ( [Value] - 1 ) * RowStep
+
+        RETURN
+            "<line x1='15' y1='"
+                & FORMAT ( Y, "0", "en-US" )
+                & "' x2='"
+                & FORMAT ( SvgWidth, "0", "en-US" )
+                & "' y2='"
+                & FORMAT ( Y, "0", "en-US" )
+                & "' stroke='#19366B' stroke-width='0.6' opacity='0.55'/>",
+
+        ""
+    )
+
+VAR Lines =
+    CONCATENATEX (
+        TeamsStyled,
+
+        VAR ThisClub = [Club]
+        VAR Color = [@Color]
+        VAR Logo = [@Logo]
+        VAR InitialRank = [@InitialRank]
+
+        VAR GamesPlayed =
+            COUNTROWS (
+                FILTER (
+                    Played,
+                    'public matches'[HOME_TEAM] = ThisClub
+                        || 'public matches'[AWAY_TEAM] = ThisClub
+                )
+            )
+
+        VAR TeamLastRound =
+            MIN (
+                8,
+                GamesPlayed
+            )
+
+        VAR History =
+            FILTER (
+                FullHistory,
+                [Club] = ThisClub
+                    && [RoundNo] <= TeamLastRound
+            )
+
+        VAR Duration =
+            FORMAT (
+                MAX ( 1, TeamLastRound ) * 1.4,
+                "0.0",
+                "en-US"
+            )
+                & "s"
+
+        VAR Positions =
+            CONCATENATEX (
+                History,
+
+                FORMAT (
+                    StartX
+                        + ( [RoundNo] * StepX ),
+                    "0",
+                    "en-US"
+                )
+                    & " "
+                    & FORMAT (
+                        StartY
+                            + ( [RankNo] - 1 ) * RowStep,
+                        "0",
+                        "en-US"
+                    ),
+
+                ";",
+                [RoundNo], ASC
+            )
+
+        VAR KeyTimes =
+            CONCATENATEX (
+                History,
+
+                FORMAT (
+                    DIVIDE (
+                        [RoundNo],
+                        MAX ( 1, TeamLastRound ),
+                        0
+                    ),
+                    "0.000000",
+                    "en-US"
+                ),
+
+                ";",
+                [RoundNo], ASC
+            )
+
+        VAR Segments =
+            CONCATENATEX (
+                FILTER (
+                    History,
+                    [RoundNo] > 0
+                ),
+
+                VAR ThisRound = [RoundNo]
+
+                VAR CurrentX =
+                    StartX
+                        + ( ThisRound * StepX )
+
+                VAR CurrentY =
+                    StartY
+                        + ( [RankNo] - 1 ) * RowStep
+
+                VAR PreviousRank =
+                    MAXX (
+                        FILTER (
+                            History,
+                            [RoundNo] = ThisRound - 1
+                        ),
+                        [RankNo]
+                    )
+
+                VAR PreviousX =
+                    StartX
+                        + ( ( ThisRound - 1 ) * StepX )
+
+                VAR PreviousY =
+                    StartY
+                        + ( PreviousRank - 1 ) * RowStep
+
+                VAR SegmentPath =
+                    "M "
+                        & FORMAT ( PreviousX, "0", "en-US" )
+                        & " "
+                        & FORMAT ( PreviousY, "0", "en-US" )
+                        & " L "
+                        & FORMAT ( CurrentX, "0", "en-US" )
+                        & " "
+                        & FORMAT ( CurrentY, "0", "en-US" )
+
+                VAR BeginTime =
+                    FORMAT (
+                        ( ThisRound - 1 ) * 1.4,
+                        "0.0",
+                        "en-US"
+                    )
+                        & "s"
+
+                RETURN
+                    "<path d='"
+                        & SegmentPath
+                        & "' fill='none' stroke='"
+                        & Color
+                        & "' stroke-width='2.3' stroke-opacity='0.93' stroke-linecap='round' stroke-linejoin='round' pathLength='100' stroke-dasharray='100' stroke-dashoffset='100'>"
+                        & "<animate attributeName='stroke-dashoffset' from='100' to='0' begin='"
+                        & BeginTime
+                        & "' dur='1.4s' calcMode='linear' fill='freeze'/>"
+                        & "</path>",
+
+                "",
+                [RoundNo], ASC
+            )
+
+        VAR LogoSVG =
+            IF (
+                NOT ISBLANK ( Logo )
+                    && Logo <> "",
+                "<image href='"
+                    & Logo
+                    & "' x='-10' y='-10' width='20' height='20' preserveAspectRatio='xMidYMid meet'/>",
+                "<circle r='6' fill='"
+                    & Color
+                    & "'/>"
+            )
+
+        VAR LiveStats =
+            CONCATENATEX (
+                History,
+
+                VAR ThisRound = [RoundNo]
+                VAR Points = [PTS]
+                VAR GoalsFor = [GF]
+
+                VAR StartTime =
+                    FORMAT (
+                        ThisRound * 1.4,
+                        "0.0",
+                        "en-US"
+                    )
+                        & "s"
+
+                RETURN
+                    "<g visibility='hidden'>"
+                        & "<set attributeName='visibility' to='visible' begin='"
+                        & StartTime
+                        & "' "
+                        & IF (
+                            ThisRound = TeamLastRound,
+                            "fill='freeze'",
+                            "dur='1.4s' fill='remove'"
+                        )
+                        & "/>"
+                        & "<rect x='17' y='-11' width='104' height='22' rx='5' fill='#102C69' stroke='"
+                        & Color
+                        & "' stroke-width='1'/>"
+                        & "<text x='24' y='3' fill='#FFFFFF' font-size='10' font-weight='700'>"
+                        & FORMAT ( Points, "0" )
+                        & " PTS</text>"
+                        & "<text x='70' y='3' fill='#00C8FF' font-size='10' font-weight='700'>"
+                        & FORMAT ( GoalsFor, "0" )
+                        & " GF</text>"
+                        & "</g>",
+
+                "",
+                [RoundNo], ASC
+            )
+
+        VAR StartPosition =
+            FORMAT (
+                StartX,
+                "0",
+                "en-US"
+            )
+                & " "
+                & FORMAT (
+                    StartY
+                        + ( InitialRank - 1 ) * RowStep,
+                    "0",
+                    "en-US"
+                )
+
+        RETURN
+            "<g>"
+                & Segments
+                & "<g transform='translate("
+                & StartPosition
+                & ")'>"
+                & IF (
+                    TeamLastRound > 0,
+                    "<animateTransform attributeName='transform' type='translate' values='"
+                        & Positions
+                        & "' keyTimes='"
+                        & KeyTimes
+                        & "' calcMode='linear' dur='"
+                        & Duration
+                        & "' begin='0s' fill='freeze'/>",
+                    ""
+                )
+                & "<circle r='13' fill='#071B49' stroke='"
+                & Color
+                & "' stroke-width='1.7'/>"
+                & LogoSVG
+                & LiveStats
+                & "</g>"
+                & "</g>",
+
+        "",
+        [@InitialRank], ASC
+    )
+
+RETURN
+    IF (
+        ClubCountFinal = 0
+            || LastRound = 0,
+
+        "<div style='padding:15px;background:#07143A;color:#FFFFFF;font-family:Segoe UI,Arial,sans-serif;'>"
+            & SeasonLabel
+            & ": league phase matches not found.</div>",
+
+        "<div style='width:100%;height:100%;margin:0;padding:0;overflow:auto;box-sizing:border-box;background:#07143A;font-family:Segoe UI,Arial,sans-serif;color:#FFFFFF;'>"
+            & "<div style='display:flex;width:max-content;min-width:100%;align-items:flex-start;margin:0;padding:0;background:#07143A;'>"
+            & "<div style='width:"
+            & FORMAT ( LegendWidth, "0" )
+            & "px;flex:0 0 "
+            & FORMAT ( LegendWidth, "0" )
+            & "px;padding-top:26px;box-sizing:border-box;background:#07143A;'>"
+            & Legend
+            & "</div>"
+            & "<svg xmlns='http://www.w3.org/2000/svg' width='"
+            & FORMAT ( SvgWidth, "0", "en-US" )
+            & "' height='"
+            & FORMAT ( ChartHeight, "0", "en-US" )
+            & "' viewBox='0 0 "
+            & FORMAT ( SvgWidth, "0", "en-US" )
+            & " "
+            & FORMAT ( ChartHeight, "0", "en-US" )
+            & "' style='display:block;flex:0 0 "
+            & FORMAT ( SvgWidth, "0", "en-US" )
+            & "px;background:#07143A;border:none;'>"
+            & HorizontalGrid
+            & VerticalGrid
+            & Lines
+            & "</svg>"
+            & "</div>"
+            & "</div>"
+    )
+

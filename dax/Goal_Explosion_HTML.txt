@@ -1,0 +1,1058 @@
+﻿Goal_Explosion_HTML = 
+
+VAR SelectedSeason =
+
+    COALESCE(
+
+        SELECTEDVALUE('public matches'[SEASON]),
+
+        MAXX(
+
+            FILTER(
+
+                ALL('public matches'),
+
+                'public matches'[STAGE] = "League phase"
+
+                    && NOT ISBLANK('public matches'[HOME_TEAM_SCORE])
+
+                    && NOT ISBLANK('public matches'[AWAY_TEAM_SCORE])
+
+            ),
+
+            'public matches'[SEASON]
+
+        )
+
+    )
+
+-- COMPLETED GAMES
+
+VAR Games =
+
+    FILTER(
+
+        ALL('public matches'),
+
+        'public matches'[SEASON] = SelectedSeason
+
+            && 'public matches'[STAGE] = "League phase"
+
+            && NOT ISBLANK('public matches'[HOME_TEAM_SCORE])
+
+            && NOT ISBLANK('public matches'[AWAY_TEAM_SCORE])
+
+            && NOT ISBLANK('public matches'[MATCH_DATE])
+
+    )
+
+-- EACH GAME'S ROUND NUMBER
+
+VAR GamesWithRound =
+
+    ADDCOLUMNS(
+
+        Games,
+
+        "@Round",
+
+            VAR CurrentTeam = 'public matches'[HOME_TEAM]
+
+            VAR CurrentDate = 'public matches'[MATCH_DATE]
+
+            VAR CurrentID = 'public matches'[MATCH_ID]
+
+            RETURN
+
+                COUNTROWS(
+
+                    FILTER(
+
+                        Games,
+
+                        (
+
+                            'public matches'[HOME_TEAM] = CurrentTeam
+
+                            || 'public matches'[AWAY_TEAM] = CurrentTeam
+
+                        )
+
+                        &&
+
+                        (
+
+                            'public matches'[MATCH_DATE] < CurrentDate
+
+                            ||
+
+                            (
+
+                                'public matches'[MATCH_DATE] = CurrentDate
+
+                                && 'public matches'[MATCH_ID] <= CurrentID
+
+                            )
+
+                        )
+
+                    )
+
+                ),
+
+        "@Goals",
+
+            'public matches'[HOME_TEAM_SCORE] + 'public matches'[AWAY_TEAM_SCORE]
+
+    )
+
+-- MATCH ROUNDS
+
+VAR Rounds =
+
+    SELECTCOLUMNS(
+
+        GENERATESERIES(1, 8, 1),
+
+        "RoundNo", [Value]
+
+    )
+
+VAR RoundStats =
+
+    ADDCOLUMNS(
+
+        Rounds,
+
+        "@Goals",
+
+            VAR R = [RoundNo]
+
+            RETURN
+
+                COALESCE(
+
+                    SUMX(
+
+                        FILTER(
+
+                            GamesWithRound,
+
+                            [@Round] = R
+
+                        ),
+
+                        [@Goals]
+
+                    ),
+
+                    0
+
+                ),
+
+        "@Matches",
+
+            VAR R = [RoundNo]
+
+            RETURN
+
+                COUNTROWS(
+
+                    FILTER(
+
+                        GamesWithRound,
+
+                        [@Round] = R
+
+                    )
+
+                )
+
+    )
+
+VAR ActiveRounds =
+
+    FILTER(
+
+        RoundStats,
+
+        [@Matches] > 0
+
+    )
+
+VAR MaxGoals =
+
+    COALESCE(MAXX(ActiveRounds, [@Goals]), 0)
+
+VAR MinGoals =
+
+    COALESCE(MINX(ActiveRounds, [@Goals]), 0)
+
+VAR TotalGoals =
+
+    COALESCE(
+
+        SUMX(
+
+            Games,
+
+            'public matches'[HOME_TEAM_SCORE] + 'public matches'[AWAY_TEAM_SCORE]
+
+        ),
+
+        0
+
+    )
+
+VAR PeakRound =
+
+    MINX(
+
+        FILTER(ActiveRounds, [@Goals] = MaxGoals),
+
+        [RoundNo]
+
+    )
+
+VAR LowRound =
+
+    MINX(
+
+        FILTER(ActiveRounds, [@Goals] = MinGoals),
+
+        [RoundNo]
+
+    )
+
+-- CLUBS
+
+VAR Clubs =
+
+    DISTINCT(
+
+        UNION(
+
+            SELECTCOLUMNS(
+
+                Games,
+
+                "Club", 'public matches'[HOME_TEAM]
+
+            ),
+
+            SELECTCOLUMNS(
+
+                Games,
+
+                "Club", 'public matches'[AWAY_TEAM]
+
+            )
+
+        )
+
+    )
+
+-- CLUB GOALS + LOGOS
+
+VAR ClubStats =
+    ADDCOLUMNS(
+        Clubs,
+        "@GF",
+            VAR T = [Club]
+            RETURN COALESCE(
+                SUMX(
+                    Games,
+                    SWITCH(
+                        TRUE(),
+                        'public matches'[HOME_TEAM] = T, 'public matches'[HOME_TEAM_SCORE],
+                        'public matches'[AWAY_TEAM] = T, 'public matches'[AWAY_TEAM_SCORE],
+                        0
+                    )
+                ), 0
+            ),
+        "@GA",
+            VAR T = [Club]
+            RETURN COALESCE(
+                SUMX(
+                    Games,
+                    SWITCH(
+                        TRUE(),
+                        'public matches'[HOME_TEAM] = T, 'public matches'[AWAY_TEAM_SCORE],
+                        'public matches'[AWAY_TEAM] = T, 'public matches'[HOME_TEAM_SCORE],
+                        0
+                    )
+                ), 0
+            ),
+        "@Logo",
+            VAR T = [Club]
+            RETURN MAXX(
+                FILTER(ALL('public teams'), 'public teams'[TEAM_NAME] = T),
+                'public teams'[TEAM_URL]
+            )
+    )
+
+VAR ClubStatsWithGD =
+    ADDCOLUMNS(ClubStats, "@GD", [@GF] - [@GA])
+
+-- MOST GOALS CLUB
+
+VAR TopClub =
+
+    TOPN(
+
+        1,
+
+        ClubStatsWithGD,
+
+        [@GF], DESC,
+        [@GD], DESC,
+        [@GA], ASC,
+        [Club], ASC
+
+    )
+
+VAR TopName =
+
+    COALESCE(MAXX(TopClub, [Club]), "-")
+
+VAR TopGoals =
+
+    COALESCE(MAXX(TopClub, [@GF]), 0)
+
+VAR TopLogo =
+
+    MAXX(TopClub, [@Logo])
+
+-- FEWEST GOALS CLUB
+
+VAR LowClub =
+
+    TOPN(
+
+        1,
+
+        ClubStatsWithGD,
+
+        [@GF], ASC,
+        [@GD], ASC,
+        [@GA], DESC,
+        [Club], ASC
+
+    )
+
+VAR LowName =
+
+    COALESCE(MAXX(LowClub, [Club]), "-")
+
+VAR LowGoals =
+
+    COALESCE(MAXX(LowClub, [@GF]), 0)
+
+VAR LowLogo =
+
+    MAXX(LowClub, [@Logo])
+
+-- SAFE NAMES FOR HTML
+
+VAR TopSafeName =
+
+    SUBSTITUTE(
+
+        SUBSTITUTE(
+
+            SUBSTITUTE(
+
+                SUBSTITUTE(TopName, "&", "&"),
+
+                "<", "<"
+
+            ),
+
+            ">", ">"
+
+        ),
+
+        "'", "'"
+
+    )
+
+VAR LowSafeName =
+
+    SUBSTITUTE(
+
+        SUBSTITUTE(
+
+            SUBSTITUTE(
+
+                SUBSTITUTE(LowName, "&", "&"),
+
+                "<", "<"
+
+            ),
+
+            ">", ">"
+
+        ),
+
+        "'", "'"
+
+    )
+
+-- MATCH BARS
+
+VAR Bars =
+
+    CONCATENATEX(
+
+        RoundStats,
+
+        VAR R = [RoundNo]
+
+        VAR Goals = [@Goals]
+
+        VAR MatchCount = [@Matches]
+
+        VAR BarPercent =
+
+            DIVIDE(Goals, MaxGoals, 0) * 100
+
+        VAR BarColor =
+
+            SWITCH(
+
+                TRUE(),
+
+                MatchCount = 0, "#20345F",
+
+                MaxGoals > MinGoals && Goals = MaxGoals, "#FF405B",
+
+                MaxGoals > MinGoals && Goals = MinGoals, "#FFD34D",
+
+                "#00BFFF"
+
+            )
+
+        VAR GoalColor =
+
+            SWITCH(
+
+                TRUE(),
+
+                MatchCount = 0, "#7890BC",
+
+                MaxGoals > MinGoals && Goals = MaxGoals, "#FF6678",
+
+                MaxGoals > MinGoals && Goals = MinGoals, "#FFD34D",
+
+                "#FFFFFF"
+
+            )
+
+        RETURN
+
+            "<div style='
+
+                display:flex;
+
+                align-items:center;
+
+                gap:7px;
+
+                width:100%;
+
+                height:30px;
+
+                box-sizing:border-box;
+
+            '>"
+
+            & "<span style='
+
+                width:22px;
+
+                flex:0 0 22px;
+
+                font-size:11px;
+
+                font-weight:700;
+
+                color:#AFC8FF;
+
+            '>M"
+
+            & FORMAT(R, "0")
+
+            & "</span>"
+
+            & "<div style='
+
+                flex:1;
+
+                min-width:0;
+
+                height:13px;
+
+                background:#1B3268;
+
+                border-radius:7px;
+
+                overflow:hidden;
+
+            '>"
+
+            & "<div style='
+
+                width:"
+
+            & FORMAT(BarPercent, "0.0", "en-US")
+
+            & "%;
+
+                height:100%;
+
+                background:"
+
+            & BarColor
+
+            & ";
+
+                border-radius:7px;
+
+            '></div>"
+
+            & "</div>"
+
+            & "<span style='
+
+                width:28px;
+
+                flex:0 0 28px;
+
+                text-align:right;
+
+                font-size:13px;
+
+                font-weight:800;
+
+                color:"
+
+            & GoalColor
+
+            & ";
+
+            '>"
+
+            & IF(
+
+                MatchCount = 0,
+
+                "-",
+
+                FORMAT(Goals, "0")
+
+            )
+
+            & "</span></div>",
+
+        "",
+
+        [RoundNo], ASC
+
+    )
+
+-- LOGOS
+
+VAR TopLogoHTML =
+
+    IF(
+
+        NOT ISBLANK(TopLogo) && TopLogo <> "",
+
+        "<img src='" & TopLogo & "'
+
+            style='width:33px;height:33px;
+
+            object-fit:contain;'/>",
+
+        "<span style='font-size:23px;'>РІС™Р…</span>"
+
+    )
+
+VAR LowLogoHTML =
+
+    IF(
+
+        NOT ISBLANK(LowLogo) && LowLogo <> "",
+
+        "<img src='" & LowLogo & "'
+
+            style='width:33px;height:33px;
+
+            object-fit:contain;'/>",
+
+        "<span style='font-size:23px;'>РІС™Р…</span>"
+
+    )
+
+-- MOST GOALS CARD
+
+VAR TopCard =
+
+    "<div style='
+
+        display:flex;
+
+        align-items:center;
+
+        gap:7px;
+
+        width:100%;
+
+        box-sizing:border-box;
+
+        padding:9px 7px;
+
+        background:#112A60;
+
+        border-left:3px solid #FF405B;
+
+        border-radius:7px;
+
+    '>"
+
+    & "<div style='
+
+        width:36px;
+
+        flex:0 0 36px;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+    '>"
+
+    & TopLogoHTML
+
+    & "</div>"
+
+    & "<div style='
+
+        flex:1;
+
+        min-width:0;
+
+        overflow-wrap:break-word;
+
+        word-break:normal;
+
+    '>"
+
+    & "<div style='
+
+        color:#FF7285;
+
+        font-size:9px;
+
+        font-weight:800;
+
+        margin-bottom:4px;
+
+    '>MOST GOALS</div>"
+
+    & "<div style='
+
+        color:#FFFFFF;
+
+        font-size:11px;
+
+        line-height:15px;
+
+        font-weight:600;
+
+    '>"
+
+    & TopSafeName
+
+    & "</div></div>"
+
+    & "<div style='
+
+        width:28px;
+
+        flex:0 0 28px;
+
+        text-align:right;
+
+    '>"
+
+    & "<div style='
+
+        color:#FF6075;
+
+        font-size:22px;
+
+        font-weight:800;
+
+    '>"
+
+    & FORMAT(TopGoals, "0")
+
+    & "</div>"
+
+    & "<div style='
+
+        color:#AFC8FF;
+
+        font-size:8px;
+
+    '>GOALS</div></div></div>"
+
+-- FEWEST GOALS CARD
+
+VAR LowCard =
+
+    "<div style='
+
+        display:flex;
+
+        align-items:center;
+
+        gap:7px;
+
+        width:100%;
+
+        box-sizing:border-box;
+
+        padding:9px 7px;
+
+        background:#112A60;
+
+        border-left:3px solid #FFD34D;
+
+        border-radius:7px;
+
+    '>"
+
+    & "<div style='
+
+        width:36px;
+
+        flex:0 0 36px;
+
+        display:flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+    '>"
+
+    & LowLogoHTML
+
+    & "</div>"
+
+    & "<div style='
+
+        flex:1;
+
+        min-width:0;
+
+        overflow-wrap:break-word;
+
+        word-break:normal;
+
+    '>"
+
+    & "<div style='
+
+        color:#FFD34D;
+
+        font-size:9px;
+
+        font-weight:800;
+
+        margin-bottom:4px;
+
+    '>FEWEST GOALS</div>"
+
+    & "<div style='
+
+        color:#FFFFFF;
+
+        font-size:11px;
+
+        line-height:15px;
+
+        font-weight:600;
+
+    '>"
+
+    & LowSafeName
+
+    & "</div></div>"
+
+    & "<div style='
+
+        width:28px;
+
+        flex:0 0 28px;
+
+        text-align:right;
+
+    '>"
+
+    & "<div style='
+
+        color:#FFD34D;
+
+        font-size:22px;
+
+        font-weight:800;
+
+    '>"
+
+    & FORMAT(LowGoals, "0")
+
+    & "</div>"
+
+    & "<div style='
+
+        color:#AFC8FF;
+
+        font-size:8px;
+
+    '>GOALS</div></div></div>"
+
+-- FINAL HTML
+
+RETURN
+
+    "<div style='
+
+        width:100%;
+
+        height:100%;
+
+        box-sizing:border-box;
+
+        margin:0;
+
+        padding:10px;
+
+        overflow:auto;
+
+        background:#07143A;
+
+        color:#FFFFFF;
+
+        font-family:Segoe UI,Arial,sans-serif;
+
+    '>"
+
+    & "<div style='
+
+        font-size:14px;
+
+        font-weight:800;
+
+        line-height:20px;
+
+        color:#FFFFFF;
+
+    '>GOAL EXPLOSION</div>"
+
+    & "<div style='
+
+        font-size:10px;
+
+        color:#95B6EB;
+
+        margin-bottom:11px;
+
+    '>GOALS BY MATCH</div>"
+
+    & Bars
+
+    & "<div style='
+
+        border-top:1px solid #274176;
+
+        margin-top:10px;
+
+        padding-top:11px;
+
+    '>"
+
+    & "<div style='
+
+        display:flex;
+
+        justify-content:space-between;
+
+        align-items:center;
+
+        gap:5px;
+
+        margin-bottom:9px;
+
+    '>"
+
+    & "<span style='
+
+        color:#FF6075;
+
+        font-size:10px;
+
+    '>MOST GOALS</span>"
+
+    & "<span style='
+
+        font-size:11px;
+
+        font-weight:700;
+
+    '>"
+
+    & IF(
+
+        COUNTROWS(ActiveRounds) > 0,
+
+        "M" & FORMAT(PeakRound, "0")
+
+            & " Р’В· " & FORMAT(MaxGoals, "0"),
+
+        "-"
+
+    )
+
+    & "</span></div>"
+
+    & "<div style='
+
+        display:flex;
+
+        justify-content:space-between;
+
+        align-items:center;
+
+        gap:5px;
+
+        margin-bottom:9px;
+
+    '>"
+
+    & "<span style='
+
+        color:#FFD34D;
+
+        font-size:10px;
+
+    '>FEWEST GOALS</span>"
+
+    & "<span style='
+
+        font-size:11px;
+
+        font-weight:700;
+
+    '>"
+
+    & IF(
+
+        COUNTROWS(ActiveRounds) > 0,
+
+        "M" & FORMAT(LowRound, "0")
+
+            & " Р’В· " & FORMAT(MinGoals, "0"),
+
+        "-"
+
+    )
+
+    & "</span></div>"
+
+    & "<div style='
+
+        display:flex;
+
+        justify-content:space-between;
+
+        align-items:center;
+
+        gap:5px;
+
+        border-top:1px solid #274176;
+
+        padding-top:10px;
+
+    '>"
+
+    & "<span style='
+
+        color:#AFC8FF;
+
+        font-size:10px;
+
+    '>TOTAL GOALS</span>"
+
+    & "<span style='
+
+        color:#FFFFFF;
+
+        font-size:18px;
+
+        font-weight:800;
+
+    '>"
+
+    & FORMAT(TotalGoals, "0")
+
+    & "</span></div></div>"
+
+    & "<div style='
+
+        border-top:1px solid #274176;
+
+        padding-top:11px;
+
+        margin-top:13px;
+
+    '>"
+
+    & "<div style='
+
+        color:#AFC8FF;
+
+        font-size:10px;
+
+        font-weight:700;
+
+        margin-bottom:10px;
+
+    '>CLUB GOAL LEADERS</div>"
+
+    & IF(
+
+        COUNTROWS(ClubStats) > 0,
+
+        TopCard
+
+            & "<div style='height:9px;'></div>"
+
+            & LowCard,
+
+        "<div style='color:#AFC8FF;font-size:10px;'>
+
+            No completed matches.
+
+        </div>"
+
+    )
+
+    & "</div></div>"
+
+
+

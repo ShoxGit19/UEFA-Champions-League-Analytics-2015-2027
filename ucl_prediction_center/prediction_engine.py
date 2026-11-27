@@ -27,7 +27,8 @@ def predict(upcoming,features,bundle,selected,report,catalog,cutoff,config):
         for c in ['MATCH_ID','SEASON','HOME_TEAM','AWAY_TEAM','STADIUM']:
             v=row[c]; result[c]=None if pd.isna(v) else v
         result.update(DATE_TIME=row.KICKOFF_UTC.to_pydatetime().replace(tzinfo=None),MODEL_NAME=selected,
-            MODEL_VERSION=VERSION,PREDICTION_CREATED_AT=cutoff.to_pydatetime().replace(tzinfo=None))
+            MODEL_VERSION=VERSION,PREDICTION_CREATED_AT=cutoff.to_pydatetime().replace(tzinfo=None),
+            SOURCE_SEASON=row.get('SEASON'),TRAINING_SAMPLE_COUNT=int(report.get('training_sample_count', 0)))
         for side in ['HOME','AWAY']:
             result[f'{side}_TEAM_LOGO']=catalog.get(row[f'{side}_KEY'],{}).get('logo')
         if row.HOME_KEY not in catalog or row.AWAY_KEY not in catalog:
