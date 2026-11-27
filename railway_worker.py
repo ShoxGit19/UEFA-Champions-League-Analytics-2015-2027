@@ -1,5 +1,6 @@
 """Resilient Railway worker for scheduled UCL prediction refreshes."""
 import json
+import calendar
 import logging
 import os
 import smtplib
@@ -15,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 MIN_INTERVAL_MINUTES = 5
-INTERVAL_MINUTES = max(MIN_INTERVAL_MINUTES, int(os.getenv("SYNC_INTERVAL_MINUTES", "5")))
+DAILY_SYNC_HOUR_UTC = min(23, max(0, int(os.getenv("DAILY_SYNC_HOUR_UTC", "9"))))
 MAX_RETRIES = max(1, int(os.getenv("SYNC_MAX_RETRIES", "3")))
 RETRY_BACKOFF_SECONDS = max(5, int(os.getenv("SYNC_RETRY_BACKOFF_SECONDS", "30")))
 STATE = {"status": "starting", "last_success_at": None, "last_failure_at": None,
@@ -48,12 +49,20 @@ def notify(message):
         log.warning("notification_failed error=%s", exc)
 
 
+def seconds_until_daily_run():
+    now = time.time()
+    current = time.gmtime(now)
+    target = time.struct_time((current.tm_year, current.tm_mon, current.tm_mday, DAILY_SYNC_HOUR_UTC, 0, 0, current.tm_wday, current.tm_yday, 0))
+    delay = calendar.timegm(target) - calendar.timegm(current)
+    return max(0, delay if delay > 0 else delay + 86400)
+
+
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path not in ("/", "/health", "/healthz"):
             self.send_response(404); self.end_headers(); return
         with LOCK: payload = dict(STATE)
-        payload["interval_minutes"] = INTERVAL_MINUTES
+        payload["daily_sync_hour_utc"] = DAILY_SYNC_HOUR_UTC
         body = json.dumps(payload).encode()
         self.send_response(200 if payload["status"] in ("healthy", "starting") else 503)
         self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -84,6 +93,7 @@ def run_with_retry():
             duration = round(time.monotonic() - started, 2)
             set_state(status="healthy", last_success_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), last_error=None, last_duration_seconds=duration)
             log.info("prediction_sync_success attempt=%s duration_seconds=%s", attempt, duration)
+            notify(f"✅ UCL prediction server ishladi. Daily sync muvaffaqiyatli yakunlandi. UTC: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}")
             return True
         except Exception as exc:
             log.exception("prediction_sync_failed attempt=%s/%s", attempt, MAX_RETRIES)
@@ -97,9 +107,12 @@ def run_with_retry():
 
 def main():
     start_health_server()
+    notify(f"🟢 UCL prediction server ishga tushdi. Keyingi sync UTC {DAILY_SYNC_HOUR_UTC:02d}:00 da.")
     while True:
+        delay = seconds_until_daily_run()
+        log.info("next_daily_sync_in_seconds=%s utc_hour=%s", round(delay), DAILY_SYNC_HOUR_UTC)
+        time.sleep(delay)
         run_with_retry()
-        time.sleep(INTERVAL_MINUTES * 60)
 
 
 if __name__ == "__main__":
