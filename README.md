@@ -40,7 +40,7 @@ Use `--dry-run` to generate reports and the model artifact without changing the 
 
 ## Railway deployment
 
-Railway starts `python railway_worker.py`. By default the worker runs once per day at **04:00 UTC (09:00 Asia/Tashkent)**, retries failed runs with backoff, emits logs, exposes `/health` and `/healthz` on `PORT`, records the last successful sync and sends optional Telegram/SMTP alerts on startup, success and final failure.
+Railway starts `python railway_worker.py`. By default the worker runs once per day at **09:00 Asia/Tashkent**, retries failed runs with backoff, emits logs, exposes `/health` and `/healthz` on `PORT`, records the last successful sync and sends optional Telegram/SMTP alerts on startup, success and final failure.
 
 ### Railway variables
 
@@ -54,7 +54,7 @@ UEFA_DB_URL=postgresql://...
 Optional:
 
 ```env
-DAILY_SYNC_HOUR_UTC=4
+DAILY_SYNC_HOUR_TASHKENT=9
 SYNC_MAX_RETRIES=3
 SYNC_RETRY_BACKOFF_SECONDS=30
 TELEGRAM_BOT_TOKEN=...
